@@ -3,6 +3,7 @@ import { useTrips } from './store';
 import { TripList } from './components/TripList';
 import { TripForm } from './components/TripForm';
 import { TripView } from './components/TripView';
+import { ImportView } from './components/ImportView';
 import { parseHash, type View } from './nav';
 
 function useHydrated() {
@@ -46,6 +47,8 @@ export default function App() {
         <TripForm />
       ) : view.name === 'trip' ? (
         <TripView key={view.id} tripId={view.id} />
+      ) : view.name === 'import' ? (
+        <ImportView key={view.data} data={view.data} />
       ) : (
         <TripList />
       )}

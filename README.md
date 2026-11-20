@@ -22,7 +22,7 @@ Aufs Handy holen: Seite öffnen, dann
 - **iPhone (Safari):** Teilen-Symbol → „Zum Home-Bildschirm“
 - **Android (Chrome):** Menü ⋮ → „App installieren“ bzw. „Zum Startbildschirm hinzufügen“
 
-Trips werden pro Gerät im Browser gespeichert (kein Konto, keine Synchronisierung). Bereits geladene Trips lassen sich auch offline öffnen. Für Karten, Routen und Unterkünfte braucht die App Internet.
+Trips werden pro Gerät im Browser gespeichert (kein Konto, keine Synchronisierung). **Übertragen:** Im Trip auf „📱 Aufs Handy / Teilen“ tippen und den QR-Code mit der Handy-Kamera scannen, oder den Link verschicken. Der Link enthält nur Einstellungen, Orte und Nächte (komprimiert im Teil nach `#`, wird nie an einen Server geschickt). Route, Infos und Unterkünfte baut das Zielgerät neu auf. Ein erneut geteilter Trip kann den vorhandenen ersetzen oder als Kopie gespeichert werden. Bereits geladene Trips lassen sich auch offline öffnen. Für Karten, Routen und Unterkünfte braucht die App Internet.
 
 Jeder Push auf `main` wird automatisch getestet, gebaut und veröffentlicht (`.github/workflows/deploy.yml`).
 

@@ -16,6 +16,7 @@ import { SeasonPanel } from './SeasonPanel';
 import { useSeason } from './useSeason';
 import { useCountries } from './useCountries';
 import { WildCampingCard } from './WildCampingCard';
+import { ShareCard } from './ShareCard';
 import { type WildInfo } from './AccommodationList';
 import { coordKey } from '../lib/geo';
 import { WILD_LABEL, countryName, wildHint, wildRuleFor, wildStatusFor } from '../data/wildCamping';
@@ -31,6 +32,7 @@ export function TripView({ tripId }: { tripId: string }) {
   const [accOpen, setAccOpen] = useState<string | null>(null);
   const [showCandidates, setShowCandidates] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  const [showShare, setShowShare] = useState(false);
 
   const summary = useMemo(() => (trip ? buildItinerary(trip) : null), [trip]);
   const transits = useMemo(() => (trip ? allTransitStops(trip) : []), [trip]);
@@ -201,6 +203,13 @@ export function TripView({ tripId }: { tripId: string }) {
               ⚙ Einstellungen
             </button>
             <button
+              className={`btn btn-small ${showShare ? 'btn-primary' : ''}`}
+              disabled={disabled}
+              onClick={() => setShowShare((v) => !v)}
+            >
+              📱 Aufs Handy / Teilen
+            </button>
+            <button
               className="btn btn-small btn-ghost"
               disabled={disabled}
               onClick={() => {
@@ -214,6 +223,7 @@ export function TripView({ tripId }: { tripId: string }) {
               ↻ Neu vorschlagen
             </button>
           </div>
+          {showShare && <ShareCard trip={trip} onClose={() => setShowShare(false)} />}
           {showSettings && (
             <SettingsEditor
               trip={trip}
