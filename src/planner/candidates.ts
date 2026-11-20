@@ -1,0 +1,165 @@
+import type { Candidate, Interest, Region, StopKind } from '../types';
+import { getSitelinks, getWikivoyageCoordinates, getWikivoyagePage } from '../api/wiki';
+import { lookupWikidata } from '../api/geocode';
+import { getSection, parseDestinationList, parseRegionTitles, type DestinationItem } from '../lib/wikitext';
+import { haversineKm } from '../lib/geo';
+
+const KEYWORDS: Record<Interest, RegExp> = {
+  nature:
+    /national park|nature|glacier|mountain|fjord|lake|forest|waterfall|scenic|landscape|valley|canyon|wildlife|volcan|island|gorge|cliff/i,
+  hiking: /hik|trek|trail|walk|climb|ski|kayak|outdoor|mountain|summit|peak/i,
+  beach: /beach|coast|seaside|sea |surf|bay|lagoon|snorkel|dive|diving|sand|harbour|harbor|riviera/i,
+  culture:
+    /museum|histor|castle|old town|cathedral|church|unesco|heritage|medieval|palace|temple|monaster|ruins|architect|roman|art/i,
+  city: /capital|largest city|nightlife|shopping|vibrant|lively|metropol|bars|restaurants|cosmopolitan/i,
+};
+
+export function tagsFor(kind: StopKind, text: string): Interest[] {
+  const tags = (Object.keys(KEYWORDS) as Interest[]).filter((k) => KEYWORDS[k].test(text));
+  if (kind === 'city' && !tags.includes('city')) tags.push('city');
+  if (kind === 'nature' && !tags.includes('nature')) tags.push('nature');
+  return tags;
+}
+
+/**
+ * Bewertet einen Kandidaten passend zu den Interessen (höher = besser).
+ * depth 0 = steht direkt im Artikel der gewählten Region (kuratierte Highlights, max. ~9 pro Liste),
+ * depth 1 = stammt aus einer Unterregion.
+ */
+export function scoreCandidate(
+  c: { kind: StopKind; tags: Interest[]; rank: number; depth: number },
+  interests: Interest[],
+): number {
+  let score = 3;
+  if (c.depth === 0) score += 3 + Math.max(0, 1 - c.rank * 0.1);
+  const matches = c.tags.filter((t) => interests.includes(t)).length;
+  score += matches * 2;
+  if (interests.length > 0 && matches === 0) score -= 1.5;
+  if (c.kind === 'city' && interests.length > 0 && !interests.includes('city') && !interests.includes('culture')) {
+    score -= 1;
+  }
+  return Math.round(score * 10) / 10;
+}
+
+export interface CandidateLoadResult {
+  candidates: Candidate[];
+  wikivoyageTitle?: string;
+  warnings: string[];
+}
+
+/** Ermittelt den Wikivoyage-Artikel einer Region über Wikidata. */
+export async function resolveRegionTitle(region: Region): Promise<string | undefined> {
+  if (region.wikivoyageTitle) return region.wikivoyageTitle;
+  const qid = region.wikidata ?? (await lookupWikidata(region.osmType, region.osmId).catch(() => undefined));
+  if (qid) {
+    region.wikidata = qid;
+    const sl = await getSitelinks([qid]).catch(() => ({}) as Record<string, { enwikivoyage?: string }>);
+    if (sl[qid]?.enwikivoyage) return sl[qid].enwikivoyage;
+  }
+  return undefined;
+}
+
+/**
+ * Lädt Stop-Kandidaten aus Wikivoyage: die Abschnitte "Cities" und "Other destinations"
+ * der Region und – falls das zu wenige sind – ihrer Unterregionen.
+ */
+export async function loadCandidates(
+  region: Region,
+  interests: Interest[],
+  wanted: number,
+  fallbackTitle?: string,
+): Promise<CandidateLoadResult> {
+  const warnings: string[] = [];
+  let title = await resolveRegionTitle(region);
+  if (!title && fallbackTitle) title = fallbackTitle;
+  if (!title) title = region.name;
+  const page = await getWikivoyagePage(title);
+  if (!page) {
+    return {
+      candidates: [],
+      warnings: [`Für „${region.name}“ wurde kein Wikivoyage-Artikel gefunden. Füge Stops bitte manuell hinzu.`],
+    };
+  }
+
+  type Raw = DestinationItem & { kind: StopKind; rank: number; depth: number };
+  const raws: Raw[] = [];
+  const collect = (wikitext: string, depth: number) => {
+    const cities = getSection(wikitext, ['Cities', 'Towns', 'Cities and towns']);
+    const others = getSection(wikitext, ['Other destinations']);
+    if (cities) parseDestinationList(cities).forEach((d, i) => raws.push({ ...d, kind: 'city', rank: i, depth }));
+    if (others) parseDestinationList(others).forEach((d, i) => raws.push({ ...d, kind: 'nature', rank: i, depth }));
+    return !!(cities || others);
+  };
+
+  const hasLists = collect(page.wikitext, 0);
+  if (!hasLists) {
+    // Region ist selbst ein Ort → Ort + "Go next"-Ziele
+    const goNext = getSection(page.wikitext, ['Go next']);
+    raws.push({ title: page.title, description: '', kind: 'city', rank: 0, depth: 0 });
+    if (goNext) parseDestinationList(goNext).forEach((d, i) => raws.push({ ...d, kind: 'city', rank: i, depth: 1 }));
+  }
+
+  // Zu wenige Kandidaten → Unterregionen einbeziehen
+  if (raws.length < Math.max(12, wanted * 2.5)) {
+    const regions = parseRegionTitles(getSection(page.wikitext, ['Regions']) ?? '').slice(0, 14);
+    const pages = await Promise.all(regions.map((t) => getWikivoyagePage(t).catch(() => null)));
+    for (const p of pages) if (p) collect(p.wikitext, 1);
+  }
+
+  // Duplikate entfernen
+  const seen = new Set<string>();
+  const unique = raws.filter((r) => {
+    const key = r.wikidata ?? r.title.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  // Fehlende Koordinaten nachladen
+  const missing = unique.filter((r) => r.lat == null || r.lon == null).map((r) => r.title);
+  if (missing.length) {
+    const coords = await getWikivoyageCoordinates(missing).catch(() => ({}) as Record<string, { lat: number; lon: number }>);
+    for (const r of unique) {
+      const c = coords[r.title];
+      if (c && (r.lat == null || r.lon == null)) {
+        r.lat = c.lat;
+        r.lon = c.lon;
+      }
+    }
+  }
+
+  const candidates: Candidate[] = unique
+    .filter((r) => r.lat != null && r.lon != null)
+    .filter((r) => inRegion(region, { lat: r.lat!, lon: r.lon! }))
+    .map((r) => {
+      const tags = tagsFor(r.kind, `${r.title} ${r.description}`);
+      return {
+        id: `wv:${r.title}`,
+        name: r.title,
+        kind: r.kind,
+        description: r.description,
+        wvTitle: r.title,
+        wikidata: r.wikidata,
+        lat: r.lat!,
+        lon: r.lon!,
+        tags,
+        score: scoreCandidate({ kind: r.kind, tags, rank: r.rank, depth: r.depth }, interests),
+      };
+    });
+
+  if (candidates.length === 0) warnings.push('Keine Ziele mit Koordinaten gefunden – füge Stops manuell hinzu.');
+  return { candidates, wikivoyageTitle: page.title, warnings };
+}
+
+/** Grobe Prüfung, ob ein Punkt in der Region liegt (Bounding-Box mit etwas Puffer). */
+function inRegion(region: Region, p: { lat: number; lon: number }): boolean {
+  if (!region.bbox) return haversineKm(region.center, p) < 1500;
+  const [w, s, e, n] = region.bbox;
+  const padLat = Math.max(0.3, (n - s) * 0.1);
+  const padLon = Math.max(0.3, (e - w) * 0.1);
+  if (w > e) {
+    // über die Datumsgrenze
+    return p.lat >= s - padLat && p.lat <= n + padLat && (p.lon >= w - padLon || p.lon <= e + padLon);
+  }
+  return p.lat >= s - padLat && p.lat <= n + padLat && p.lon >= w - padLon && p.lon <= e + padLon;
+}
