@@ -3,13 +3,14 @@
  * auch ohne Netz geöffnet werden können. Daten (Trips, API-Antworten) liegen ohnehin
  * in IndexedDB. Externe Dienste (Karten, Routing …) werden nicht abgefangen.
  */
-const CACHE = 'reiseplaner-v1';
+const CACHE = 'reiseplaner-v2';
+const STATIC = /\/assets\/|\.(png|webmanifest)$/;
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches
       .open(CACHE)
-      .then((c) => c.addAll(['./', './index.html', './manifest.webmanifest', './icon-192.png']))
+      .then((c) => c.addAll(['./', './manifest.webmanifest', './icon-192.png']))
       .then(() => self.skipWaiting()),
   );
 });
@@ -33,27 +34,32 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(req)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put('./index.html', copy));
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put('./', copy));
+          }
           return res;
         })
-        .catch(() => caches.match('./index.html')),
+        .catch(() => caches.match('./')),
     );
     return;
   }
 
-  // Dateien mit Hash im Namen ändern sich nie: Cache zuerst
-  event.respondWith(
-    caches.match(req).then(
-      (hit) =>
-        hit ||
-        fetch(req).then((res) => {
-          if (res.ok) {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, copy));
-          }
-          return res;
-        }),
-    ),
-  );
+  // Dateien mit Hash im Namen und Icons ändern sich nie: Cache zuerst
+  if (STATIC.test(url.pathname)) {
+    event.respondWith(
+      caches.match(req).then(
+        (hit) =>
+          hit ||
+          fetch(req).then((res) => {
+            if (res.ok) {
+              const copy = res.clone();
+              caches.open(CACHE).then((c) => c.put(req, copy));
+            }
+            return res;
+          }),
+      ),
+    );
+  }
+  // alles andere (z. B. Versionsprüfung) normal übers Netz
 });

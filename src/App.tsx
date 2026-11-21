@@ -4,6 +4,7 @@ import { TripList } from './components/TripList';
 import { TripForm } from './components/TripForm';
 import { TripView } from './components/TripView';
 import { ImportView } from './components/ImportView';
+import { UpdateBanner } from './components/UpdateBanner';
 import { parseHash, type View } from './nav';
 
 function useHydrated() {
@@ -52,6 +53,7 @@ export default function App() {
       ) : (
         <TripList />
       )}
+      <UpdateBanner />
     </div>
   );
 }
