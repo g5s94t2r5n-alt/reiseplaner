@@ -158,3 +158,50 @@ describe('Plausibilität von Wikidata-Verweisen', () => {
     expect(titleMatches('Galleri Fjalar', 'Gaahl')).toBe(false);
   });
 });
+
+describe('Unterwegs-Highlights', () => {
+  const line: [number, number][] = [
+    [60, 5],
+    [60, 6],
+    [60, 7],
+  ];
+  const art = (title: string, description: string, lat: number, lon: number, views = 100) => ({
+    title,
+    description,
+    lat,
+    lon,
+    length: 3000,
+    views,
+    url: 'x',
+  });
+
+  it('nur Sehenswertes nahe der Strecke, nicht an Stops, nach Beliebtheit', async () => {
+    const { pickRouteHighlights } = await import('./routeHighlights');
+    const picked = pickRouteHighlights(
+      [
+        art('Vøringsfossen', 'Wasserfall in der Gemeinde Eidfjord', 60.02, 6.0, 900),
+        art('Trollstigen', 'Touristen-Strecke in Norwegen, Passstraße', 60.01, 6.5, 2000),
+        art('Eidfjord', 'Kommune in Norwegen', 60.0, 6.2, 5000),
+        art('Ferner Wasserfall', 'Wasserfall in Norwegen', 60.3, 6.0, 9000), // ~33 km abseits
+        art('Wasserfall am Stop', 'Wasserfall in Norwegen', 60.0, 5.02, 9000), // am Start
+      ],
+      line,
+      [{ lat: 60, lon: 5 }],
+      {},
+    );
+    expect(picked.map((p) => p.title)).toEqual(['Trollstigen', 'Vøringsfossen']);
+    expect(picked[0].icon).toBe('🛣️');
+    expect(picked[1].icon).toBe('💧');
+    expect(picked[1].fraction).toBeCloseTo(0.5, 1);
+    expect(picked[1].offRouteKm).toBeLessThan(3);
+  });
+
+  it('Abstand zur Linie und Position entlang', async () => {
+    const { distanceToLine, samplesAlong } = await import('./routeHighlights');
+    const d = distanceToLine({ lat: 60.05, lon: 6 }, line);
+    expect(d.km).toBeCloseTo(5.5, 0);
+    expect(d.fraction).toBeCloseTo(0.5, 1);
+    // ~111 km Linie → Punkte bei 15, 50, 85 km
+    expect(samplesAlong(line, 35, 15)).toHaveLength(3);
+  });
+});

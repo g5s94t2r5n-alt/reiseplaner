@@ -151,6 +151,73 @@ export async function getWikidataClasses(qids: string[], classIds: string[]): Pr
   return out;
 }
 
+export interface WikidataHighlight {
+  qid: string;
+  label: string;
+  lat: number;
+  lon: number;
+  /** Anzahl Wikipedia-Sprachversionen – Maß für Bekanntheit */
+  sitelinks: number;
+  wvTitle?: string;
+  /** Titel des englischen Wikipedia-Artikels (für Aufrufzahlen) */
+  enTitle?: string;
+  nationalPark: boolean;
+}
+
+/**
+ * Nationalparks und UNESCO-Welterbe in einer Region (Wikidata). `scope`: "country" sucht über das Land
+ * (P17), sonst über die Verwaltungseinheit (P131+). Sortiert nach Bekanntheit.
+ */
+export async function getWikidataHighlights(regionQid: string, scope: 'country' | 'admin'): Promise<WikidataHighlight[]> {
+  const where = scope === 'country' ? `wdt:P17 wd:${regionQid}` : `wdt:P131+ wd:${regionQid}`;
+  const query =
+    `SELECT ?item ?itemLabel ?coord ?links ?wv ?en ?np WHERE { ` +
+    `{ ?item wdt:P31 wd:Q46169 . BIND(1 AS ?np) } UNION { ?item wdt:P1435 wd:Q9259 . } ` +
+    `?item ${where} ; wikibase:sitelinks ?links ; wdt:P625 ?coord . FILTER(?links >= 6) ` +
+    `OPTIONAL { ?wvp schema:about ?item ; schema:isPartOf <https://en.wikivoyage.org/> ; schema:name ?wv . } ` +
+    `OPTIONAL { ?enp schema:about ?item ; schema:isPartOf <https://en.wikipedia.org/> ; schema:name ?en . } ` +
+    `SERVICE wikibase:label { bd:serviceParam wikibase:language "de,en". } } ORDER BY DESC(?links) LIMIT 60`;
+  const url = `https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(query)}`;
+  return cached(`wd-hl2:${scope}:${regionQid}`, 30 * DAY, async () => {
+    const d = await wikiLimit(() =>
+      fetchJson<{
+        results: {
+          bindings: {
+            item: { value: string };
+            itemLabel: { value: string };
+            coord: { value: string };
+            links: { value: string };
+            wv?: { value: string };
+            en?: { value: string };
+            np?: { value: string };
+          }[];
+        };
+      }>(url, { headers: { Accept: 'application/sparql-results+json' } }, 40000),
+    );
+    const seen = new Map<string, WikidataHighlight>();
+    for (const b of d.results.bindings) {
+      const qid = b.item.value.split('/').pop()!;
+      const m = /Point\(([-\d.]+) ([-\d.]+)\)/.exec(b.coord.value);
+      if (!m) continue;
+      const prev = seen.get(qid);
+      const h: WikidataHighlight = {
+        qid,
+        label: b.itemLabel.value,
+        lon: parseFloat(m[1]),
+        lat: parseFloat(m[2]),
+        sitelinks: parseInt(b.links.value, 10),
+        wvTitle: b.wv?.value ?? prev?.wvTitle,
+        enTitle: b.en?.value ?? prev?.enTitle,
+        nationalPark: !!b.np || !!prev?.nationalPark,
+      };
+      // Label "Q123" = kein Name in DE/EN → überspringen
+      if (/^Q\d+$/.test(h.label)) continue;
+      seen.set(qid, h);
+    }
+    return [...seen.values()];
+  });
+}
+
 /* ---------------- Beliebtheit: Aufrufzahlen (Ersatz für Bewertungen) ---------------- */
 
 export type WikiSite = 'en.wikivoyage.org' | 'en.wikipedia.org' | 'de.wikipedia.org';

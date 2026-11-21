@@ -50,7 +50,17 @@ export function formatDateShort(iso: string): string {
 
 export type ItineraryItem =
   | { type: 'start'; place: Place; date: string }
-  | { type: 'drive'; distanceKm: number; durationH: number; date: string; segmentIndex: number; long: boolean }
+  | {
+      type: 'drive';
+      distanceKm: number;
+      durationH: number;
+      date: string;
+      segmentIndex: number;
+      long: boolean;
+      /** Teilstück der Etappe (bei Zwischenstopps), 0-basiert, und Anzahl der Teilstücke */
+      part: number;
+      parts: number;
+    }
   | { type: 'transit'; transit: TransitStop; arrive: string; depart: string }
   | { type: 'stop'; stop: Stop; index: number; arrive: string; depart: string }
   | { type: 'end'; place: Place; date: string };
@@ -96,6 +106,8 @@ export function buildItinerary(trip: Trip): ItinerarySummary {
           date,
           segmentIndex: si,
           long: partH > settings.maxDriveHours * 1.15,
+          part: p,
+          parts,
         });
         if (p < segTransits.length) {
           items.push({ type: 'transit', transit: segTransits[p], arrive: date, depart: addDays(date, 1) });

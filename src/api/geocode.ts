@@ -252,5 +252,6 @@ export function toRegion(r: SearchResult): Region {
     countryCode: r.countryCode,
     bbox: r.bbox,
     center: { lat: r.lat, lon: r.lon },
+    type: r.type,
   };
 }

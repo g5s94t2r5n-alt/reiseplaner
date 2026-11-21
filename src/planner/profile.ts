@@ -60,6 +60,34 @@ export const CLASS_INTERESTS: Record<string, { label: string; interests: Interes
   Q9259: { label: 'UNESCO-Welterbe', interests: ['culture'] },
 };
 
+/** Ortsart für Abwechslung: spezifische Wikidata-Klasse, sonst Art + stärkstes Interesse. */
+const TYPE_PRIORITY = [
+  'Q35666', // Gletscher
+  'Q45776', // Fjord
+  'Q34038', // Wasserfall
+  'Q46169', // Nationalpark
+  'Q46831', // Gebirge
+  'Q8502', // Berg
+  'Q33837', // Inselgruppe
+  'Q23442', // Insel
+  'Q40080', // Strand
+  'Q200023', // Seebad
+  'Q23397', // See
+  'Q676050', // Altstadt
+  'Q5119', // Hauptstadt
+  'Q1549591', // Großstadt
+  'Q515', // Stadt
+];
+
+export function typeKeyFor(kind: StopKind, classes: string[] | undefined, strengths?: Partial<Record<Interest, number>>): string {
+  const cls = TYPE_PRIORITY.find((q) => classes?.includes(q));
+  if (cls) return CLASS_INTERESTS[cls].label;
+  const top = strengths
+    ? (Object.entries(strengths) as [Interest, number][]).sort((a, b) => b[1] - a[1])[0]?.[0]
+    : undefined;
+  return `${kind}:${top ?? '-'}`;
+}
+
 /* ---------------- Interessen-Stärke ---------------- */
 
 /**

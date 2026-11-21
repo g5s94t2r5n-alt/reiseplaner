@@ -24,6 +24,8 @@ import { DiscoverPanel, discoverPois, type DiscoverState } from './DiscoverPanel
 import type { PublicHoliday } from '../api/holidays';
 import { CountryInfoCard } from './CountryInfoCard';
 import { useTravelInfo, type CountryStay } from './useTravelInfo';
+import { useRouteHighlights } from './useRouteHighlights';
+import type { MapPoi } from './MapView';
 import { loadDiscover } from '../planner/discover';
 import { type WildInfo } from './AccommodationList';
 import { coordKey } from '../lib/geo';
@@ -39,6 +41,7 @@ export function TripView({ tripId }: { tripId: string }) {
   const [acc, setAcc] = useState<Record<string, AccState>>({});
   const [accOpen, setAccOpen] = useState<string | null>(null);
   const [showCandidates, setShowCandidates] = useState(true);
+  const [showRouteHl, setShowRouteHl] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [showShare, setShowShare] = useState(false);
   // Handy: entweder Reiseplan oder Karte (beides gleichzeitig ist zu eng)
@@ -70,6 +73,7 @@ export function TripView({ tripId }: { tripId: string }) {
     return [...byCc.values()];
   }, [trip, summary, countries]);
   const travel = useTravelInfo(stays);
+  const routeHl = useRouteHighlights(trip);
   const holidaysAt = (id: string) =>
     travel.info.flatMap((c) => c.holidaysByPlace).find((p) => p.id === id)?.holidays ?? [];
 
@@ -249,7 +253,20 @@ export function TripView({ tripId }: { tripId: string }) {
 
   const nightsDiff = summary.nightsUsed - settings.nights;
   const accItems = accOpen ? (acc[accOpen]?.items ?? []) : [];
-  const pois = discOpen ? discoverPois(disc[discOpen]?.data) : [];
+  const routePois: MapPoi[] = showRouteHl
+    ? Object.values(routeHl.bySegment)
+        .flat()
+        .map((h) => ({
+          id: `rh-${h.title}`,
+          lat: h.lat,
+          lon: h.lon,
+          icon: h.icon,
+          title: h.title,
+          subtitle: `Unterwegs: ${h.description ?? ''}${h.offRouteKm >= 1 ? ` · ${Math.round(h.offRouteKm)} km abseits` : ' · direkt an der Strecke'}`,
+          url: h.url,
+        }))
+    : [];
+  const pois = [...(discOpen ? discoverPois(disc[discOpen]?.data) : []), ...routePois];
   const endPlace = settings.end ?? settings.start;
   const stopNames = Object.fromEntries(trip.stops.map((s) => [s.id, s.name]));
   const segmentLabels = Object.fromEntries(
@@ -424,6 +441,30 @@ export function TripView({ tripId }: { tripId: string }) {
                         ⛰ bis ca. {(Math.round(season.report!.segments[item.segmentIndex].maxElevation / 50) * 50).toLocaleString('de-DE')} m
                       </span>
                     )}
+                    {(() => {
+                      // Highlights dieses Tagesabschnitts der Etappe
+                      const hl = (routeHl.bySegment[item.segmentIndex] ?? []).filter(
+                        (h) => h.fraction >= item.part / item.parts && h.fraction < (item.part + 1) / item.parts + 1e-9,
+                      );
+                      if (hl.length === 0) return null;
+                      return (
+                        <div className="route-hl">
+                          <span className="muted">Unterwegs:</span>
+                          {hl.map((h) => (
+                            <a
+                              key={h.title}
+                              href={h.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="pill-link"
+                              title={`${h.description ?? ''}${h.offRouteKm >= 1 ? ` · ca. ${Math.round(h.offRouteKm)} km abseits` : ' · direkt an der Strecke'}`}
+                            >
+                              {h.icon} {h.title}
+                            </a>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </li>
                 );
               }
@@ -503,6 +544,10 @@ export function TripView({ tripId }: { tripId: string }) {
           <label className="check small">
             <input type="checkbox" checked={showCandidates} onChange={(e) => setShowCandidates(e.target.checked)} />
             Weitere Wikivoyage-Empfehlungen auf der Karte zeigen ({trip.candidates.length})
+          </label>
+          <label className="check small">
+            <input type="checkbox" checked={showRouteHl} onChange={(e) => setShowRouteHl(e.target.checked)} />
+            Unterwegs-Highlights auf der Karte zeigen{routeHl.loading ? ' (lade …)' : ''}
           </label>
           {(trip.excluded ?? []).length > 0 && (
             <div className="small excluded-list">

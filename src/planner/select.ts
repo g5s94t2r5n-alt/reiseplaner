@@ -28,6 +28,10 @@ export interface SelectInput {
    * Lückenfüller gewählt – übrige Nächte gehen dann an die gewählten Stops. Standard 0,55.
    */
   minRelScore?: number;
+  /** Mindestabstand zwischen zwei Stops als Fahrzeit in Stunden (Standard 0,5) */
+  minSpacingH?: number;
+  /** Faktor je weiterem Stop derselben Ortsart (Abwechslung), Standard 0,8 */
+  diversity?: number;
 }
 
 export interface SelectResult {
@@ -43,7 +47,9 @@ export interface SelectResult {
  */
 export function selectStops(input: SelectInput): SelectResult {
   const { candidates, nights, pace, maxDriveH, travelFactor } = input;
-  const minSpacing = input.minSpacingKm ?? 20;
+  const minSpacing = input.minSpacingKm ?? 15;
+  const minSpacingH = input.minSpacingH ?? 0.5;
+  const diversity = input.diversity ?? 0.8;
   const avg = AVG_NIGHTS[pace];
   const node = (ci: number) => ci + 2;
   const dur = (a: number, b: number) => {
@@ -75,6 +81,14 @@ export function selectStops(input: SelectInput): SelectResult {
       const c = candidates[ci];
       if (c.score < minScore) continue;
       if ([...chosen].some((o) => haversineKm(candidates[o], c) < minSpacing)) continue;
+      // zu nah an einem gewählten Stop (Fahrzeit) → lieber als Ausflug von dort
+      if (
+        [...chosen].some((o) => {
+          const d = input.duration(node(ci), node(o)) ?? input.duration(node(o), node(ci));
+          return d != null && d < minSpacingH;
+        })
+      )
+        continue;
       let bestPos = -1;
       let bestAdd = Infinity;
       for (let pos = 1; pos < route.length; pos++) {
@@ -95,7 +109,9 @@ export function selectStops(input: SelectInput): SelectResult {
       if (nightsOf(trial) > nights) continue;
       const daysUsed = avg + Math.max(0, bestAdd) / maxDriveH;
       // Quadrat: Highlights sind einen Umweg wert, mittelmäßige Orte nicht
-      const value = Math.max(0.1, c.score) ** 2 / daysUsed;
+      // Abwechslung: jeder weitere Stop derselben Ortsart (z. B. dritter Fjord) zählt weniger
+      const sameType = c.typeKey ? [...chosen].filter((o) => candidates[o].typeKey === c.typeKey).length : 0;
+      const value = (Math.max(0.1, c.score) ** 2 / daysUsed) * diversity ** sameType;
       if (!best || value > best.value) best = { ci, pos: bestPos, value };
     }
     if (!best) break;

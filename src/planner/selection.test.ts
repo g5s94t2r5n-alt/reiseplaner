@@ -123,3 +123,80 @@ describe('Keine Lückenfüller', () => {
     expect(res.order.map((i) => cands[i].name)).toEqual(['Highlight']);
   });
 });
+
+describe('Abwechslung und Abstand', () => {
+  it('Ortsart aus Wikidata, sonst Art + stärkstes Interesse', async () => {
+    const { typeKeyFor } = await import('./profile');
+    expect(typeKeyFor('nature', ['Q45776', 'Q23397'])).toBe('Fjord');
+    expect(typeKeyFor('city', ['Q515', 'Q1549591'])).toBe('Großstadt');
+    expect(typeKeyFor('nature', [], { hiking: 3, nature: 2 })).toBe('nature:hiking');
+  });
+
+  it('dritter Fjord verliert gegen einen etwas schwächeren Gletscher', async () => {
+    const { selectStops } = await import('./select');
+    const c = (name: string, lon: number, score: number, typeKey: string): Candidate => ({ id: name, name, kind: 'nature', lat: 0, lon, tags: [], score, typeKey });
+    const cands = [c('Fjord A', 1, 10, 'Fjord'), c('Fjord B', 2, 10, 'Fjord'), c('Fjord C', 3, 10, 'Fjord'), c('Gletscher', 3.5, 9, 'Gletscher')];
+    const pts = [{ lat: 0, lon: 0 }, { lat: 0, lon: 4 }, ...cands];
+    const res = selectStops({
+      candidates: cands,
+      duration: (a, b) => {
+        const dx = Math.abs(pts[a].lon - pts[b].lon);
+        return dx * 1.2;
+      },
+      nights: 6,
+      pace: 'normal',
+      maxDriveH: 6,
+      travelFactor: 1,
+    });
+    const names = res.order.map((i) => cands[i].name);
+    expect(names).toContain('Gletscher');
+    expect(names.filter((n) => n.startsWith('Fjord')).length).toBeLessThan(3);
+  });
+
+  it('Orte unter 30 min Fahrt voneinander werden nicht beide Stops', async () => {
+    const { selectStops } = await import('./select');
+    const c = (name: string, lon: number, score: number): Candidate => ({ id: name, name, kind: 'city', lat: 0, lon, tags: [], score });
+    const cands = [c('Siena', 1, 10), c('Nachbarort', 1.3, 9.5)]; // ~33 km, aber nur 20 min
+    const pts = [{ lat: 0, lon: 0 }, { lat: 0, lon: 0 }, ...cands];
+    const res = selectStops({
+      candidates: cands,
+      duration: (a, b) => (a === b ? 0 : (a >= 2 && b >= 2 ? 0.33 : Math.abs(pts[a].lon - pts[b].lon))),
+      nights: 10,
+      pace: 'normal',
+      maxDriveH: 5,
+      travelFactor: 1,
+    });
+    expect(res.order).toHaveLength(1);
+  });
+});
+
+describe('Kandidaten aus Wikidata', () => {
+  it('erkennt Dubletten am Kernnamen', async () => {
+    const { sameCoreName } = await import('./candidates');
+    expect(sameCoreName('Dovrefjell', 'Dovrefjell-Sunndalsfjella-Nationalpark')).toBe(true);
+    expect(sameCoreName('Jotunheimen', 'Jotunheimen-Nationalpark')).toBe(true);
+    expect(sameCoreName('Hardangervidda', 'Hardangervidda-Nationalpark')).toBe(true);
+    expect(sameCoreName('Rondane National Park', 'Dovrefjell-Nationalpark')).toBe(false);
+  });
+
+  it('übernimmt nur neue Orte und bewertet Bekanntheit über Wikipedia-Aufrufe', async () => {
+    const { wikidataCandidates, applyPopularity } = await import('./candidates');
+    const region = { name: 'N', label: 'N', osmType: 'R' as const, osmId: 1, center: { lat: 61, lon: 9 } };
+    const existing: Candidate[] = [{ id: 'wv:Dovrefjell', name: 'Dovrefjell', wvTitle: 'Dovrefjell', kind: 'nature', lat: 62.2, lon: 9.5, tags: [], score: 10 }];
+    const added = wikidataCandidates(
+      [
+        { qid: 'Q1', label: 'Dovrefjell-Sunndalsfjella-Nationalpark', lat: 62.5, lon: 9.0, sitelinks: 40, nationalPark: true, enTitle: 'Dovrefjell–Sunndalsfjella National Park' },
+        { qid: 'Q2', label: 'Rondane-Nationalpark', lat: 61.9, lon: 9.8, sitelinks: 40, nationalPark: true, enTitle: 'Rondane National Park' },
+        { qid: 'Q3', label: 'Ormtjernkampen-Nationalpark', lat: 61.2, lon: 9.7, sitelinks: 40, nationalPark: true, enTitle: 'Ormtjernkampen National Park' },
+      ],
+      existing,
+      region,
+      ['nature'],
+    );
+    expect(added.map((c) => c.name)).toEqual(['Rondane-Nationalpark', 'Ormtjernkampen-Nationalpark']);
+    added[0].wikiViews = 15000;
+    added[1].wikiViews = 300;
+    applyPopularity([...existing, ...added], { Dovrefjell: 1000 });
+    expect(added[0].popBonus!).toBeGreaterThan(added[1].popBonus! + 1);
+  });
+});

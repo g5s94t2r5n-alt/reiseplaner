@@ -1607,3 +1607,20 @@ details.season:not([open]) > summary::after {
   flex-wrap: wrap;
   gap: 6px;
 }
+
+/* ---------- Unterwegs-Highlights ---------- */
+.it-drive {
+  flex-wrap: wrap;
+}
+.route-hl {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 4px;
+}
+.route-hl .pill-link {
+  font-size: 0.78rem;
+  padding: 4px 10px;
+}

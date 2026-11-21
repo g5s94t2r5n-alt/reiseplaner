@@ -1,5 +1,5 @@
 import type { Candidate, Interest, Region, StopKind } from '../types';
-import { getPageviews, getSitelinks, getWikivoyageCoordinates, getWikivoyagePage } from '../api/wiki';
+import { getPageviews, getSitelinks, getWikidataHighlights, getWikivoyageCoordinates, getWikivoyagePage, type WikidataHighlight } from '../api/wiki';
 import { lookupWikidata } from '../api/geocode';
 import { getSection, parseDestinationList, parseRegionTitles, type DestinationItem } from '../lib/wikitext';
 import { haversineKm } from '../lib/geo';
@@ -164,6 +164,21 @@ export async function loadCandidates(
       };
     });
 
+  // Zusätzliche Kandidaten aus Wikidata: Nationalparks und UNESCO-Welterbe der Region
+  if (region.wikidata) {
+    const big = region.bbox ? region.bbox[2] - region.bbox[0] > 5 || region.bbox[3] - region.bbox[1] > 5 : false;
+    const scope = region.type ? (region.type === 'country' ? 'country' : 'admin') : big ? 'country' : 'admin';
+    const extra = await getWikidataHighlights(region.wikidata, scope).catch(() => [] as WikidataHighlight[]);
+    const added = wikidataCandidates(extra, candidates, region, interests);
+    // Bekanntheit über die Aufrufe des englischen Wikipedia-Artikels (Sprachversionen sind durch Bots verzerrt)
+    const wpViews = await getPageviews(
+      'en.wikipedia.org',
+      added.map((c) => c.enTitle ?? '').filter(Boolean),
+    ).catch(() => ({}) as Record<string, number>);
+    for (const c of added) if (c.enTitle && wpViews[c.enTitle] != null) c.wikiViews = wpViews[c.enTitle];
+    candidates.push(...added);
+  }
+
   // Beliebtheit bei Reisenden (Aufrufe der Wikivoyage-Artikel) als Qualitätsmerkmal
   if (candidates.length) {
     const views = await getPageviews(
@@ -186,10 +201,84 @@ export function popularityBonus(views: number | undefined, maxViews: number): nu
   return (3 * Math.log10(1 + views)) / Math.log10(1 + maxViews);
 }
 
+const CORE_STOP = /^(national|nationalpark|park|nasjonalpark|parco|nazionale|parque|parc|the|und|and|der|die|das)$/;
+/** Teilen zwei Namen ein markantes Wort (ohne "Nationalpark" usw.)? */
+export function sameCoreName(a: string, b: string): boolean {
+  const words = (s: string) =>
+    s
+      .toLowerCase()
+      .split(/[^a-zäöüåæøéèàìòù]+/)
+      .filter((w) => w.length >= 5 && !CORE_STOP.test(w));
+  const wa = new Set(words(a));
+  return words(b).some((w) => wa.has(w));
+}
+
+const NATURE_NAME =
+  /fjord|national|park|natur|mountain|gebirge|glacier|gletscher|island|insel|coast|küste|valley|\btal\b|\bval\b|lake|\bsee\b|wald|forest|dolomit|alpen|schären|archipel|felsen|landschaft/i;
+
+/** Nationalparks/UNESCO-Welterbe als zusätzliche Kandidaten – ohne Dubletten zu Wikivoyage-Zielen. */
+export function wikidataCandidates(
+  extra: WikidataHighlight[],
+  existing: Candidate[],
+  region: Region,
+  interests: Interest[],
+): Candidate[] {
+  const out: Candidate[] = [];
+  for (const h of extra) {
+    if (!inRegion(region, h)) continue;
+    const dup = [...existing, ...out].some(
+      (c) =>
+        (c.wikidata && c.wikidata === h.qid) ||
+        (!!h.wvTitle && c.wvTitle === h.wvTitle) ||
+        haversineKm(c, h) < 8 ||
+        // gleicher Kernname ("Dovrefjell" ↔ "Dovrefjell-Sunndalsfjella-Nationalpark") im Umkreis von 60 km
+        (haversineKm(c, h) < 60 && sameCoreName(c.name, h.label)),
+    );
+    if (dup) continue;
+    const nature = h.nationalPark || NATURE_NAME.test(h.label);
+    const kind: StopKind = nature ? 'nature' : 'city';
+    const tags: Interest[] = h.nationalPark ? ['nature', 'hiking'] : nature ? ['nature', 'culture'] : ['culture'];
+    out.push({
+      id: `wd:${h.qid}`,
+      name: h.label,
+      kind,
+      description: h.nationalPark ? 'Nationalpark' : 'UNESCO-Welterbe',
+      wvTitle: h.wvTitle,
+      wikidata: h.qid,
+      lat: h.lat,
+      lon: h.lon,
+      tags,
+      rank: 99,
+      depth: 1,
+      sitelinks: h.sitelinks,
+      enTitle: h.enTitle,
+      notes: [`Zusätzlich aus Wikidata: ${h.nationalPark ? 'Nationalpark' : 'UNESCO-Welterbe'}`],
+      score: scoreCandidate({ kind, tags, rank: 99, depth: 1 }, interests),
+    });
+  }
+  return out;
+}
+
+/** Wikipedia hat grob 15× so viele Aufrufe wie Wikivoyage – zum Vergleichen umrechnen */
+const WP_TO_WV = 15;
+
 export function applyPopularity(candidates: Candidate[], views: Record<string, number>): void {
-  const max = Math.max(0, ...candidates.map((c) => views[c.wvTitle ?? c.name] ?? 0));
+  const viewsOf = (c: Candidate) => views[c.wvTitle ?? c.name] ?? (c.wikiViews != null ? c.wikiViews / WP_TO_WV : undefined);
+  const max = Math.max(0, ...candidates.map((c) => viewsOf(c) ?? 0));
   for (const c of candidates) {
-    const v = views[c.wvTitle ?? c.name];
+    const fromWv = views[c.wvTitle ?? c.name];
+    if (fromWv == null && c.wikiViews != null) {
+      c.popBonus = popularityBonus(c.wikiViews / WP_TO_WV, max);
+      c.score = Math.round((c.score + c.popBonus) * 10) / 10;
+      continue;
+    }
+    const v = fromWv;
+    if (v == null && c.sitelinks) {
+      // ohne Wikivoyage-Artikel: Bekanntheit über die Zahl der Wikipedia-Sprachversionen (max. +2)
+      c.popBonus = Math.min(2, (3 * Math.log10(1 + c.sitelinks)) / Math.log10(151));
+      c.score = Math.round((c.score + c.popBonus) * 10) / 10;
+      continue;
+    }
     if (v == null) continue;
     c.views = v;
     c.popBonus = popularityBonus(v, max);

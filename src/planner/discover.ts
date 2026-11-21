@@ -80,19 +80,25 @@ const INTERESTING =
   /museum|denkmal|monument|kirche|dom\b|kathedrale|kapelle|kloster|abtei|burg|schloss|festung|ruine|palast|park\b|garten|see\b|stausee|berg|gipfel|massiv|gebirge|wasserfall|brücke|turm|leuchtturm|platz|altstadt|skulptur|statue|aussicht|gletscher|insel|fjord|nationalpark|naturschutz|naturdenkmal|höhle|strand|bucht|schlucht|tal\b|bauwerk|gebäude|theater|oper|konzert|markt|hafen|welterbe|unesco|stabkirche|zoo|aquarium|galerie|kunsthalle|archäolog|ausgrabung|therme|rathaus|tor\b|mühle|pass\b|halbinsel|landschaft|wanderweg|straße\b.*panorama|aussichtspunkt/i;
 
 /** Was eher nicht (Organisationen, Verwaltung, Verkehr, Personen …) */
-const BORING =
+export const BORING =
   /zeitung|universität|hochschule|schule|gymnasium|unternehmen|verein|stiftung|partei|fußball|sportverein|bahnhof|haltepunkt|haltestelle|flughafen|gemeinde|ortsteil|stadtteil|ortschaft|dorf|wahlkreis|bezirk|kommune|tettsted|bebaute fläche|kraftwerk|umspannwerk|krankenhaus|gefängnis|behörde|botschaft|bistum|pfarrei|friedhof|siedlung|weiler|straße in|autobahn|tunnel|rundfunk|sender|band\b|rapper|politiker|schauspieler|unternehmer|sänger/i;
 
 export interface NearbyPlace extends NearbyArticle {
   distanceKm: number;
 }
 
+/**
+ * Anfang der Beschreibung – dort steht die Art ("Wasserfall in der Gemeinde X"); weiter hinten
+ * auftauchende Wörter wie "Gemeinde" sollen einen Wasserfall nicht aussortieren.
+ */
+export const headOf = (desc?: string) => (desc ?? '').split(/\s(?:in|im|bei|an|am|auf|von|nahe|zwischen)\s|,|;/i)[0];
+
 export function pickNearby(articles: NearbyArticle[], center: GeoPoint, limit = 12): NearbyPlace[] {
   return articles
     .filter((a) => {
-      const d = a.description ?? '';
-      if (BORING.test(d) || BORING.test(a.title)) return false;
-      return INTERESTING.test(d) || INTERESTING.test(a.title);
+      const head = headOf(a.description);
+      if (BORING.test(head) || BORING.test(a.title)) return false;
+      return INTERESTING.test(head) || INTERESTING.test(a.title);
     })
     .map((a) => ({ ...a, distanceKm: haversineKm(center, a) }))
     // Beliebtheit (Aufrufe) vor Artikellänge, Bild und Nähe

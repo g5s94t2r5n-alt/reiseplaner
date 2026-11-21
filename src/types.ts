@@ -20,6 +20,8 @@ export interface Region {
   center: GeoPoint;
   wikidata?: string;
   wikivoyageTitle?: string;
+  /** Photon-Typ, z. B. "country" oder "state" */
+  type?: string;
 }
 
 export type TravelStyle = 'camper' | 'tent' | 'backpacker' | 'car';
@@ -59,6 +61,13 @@ export interface Candidate extends GeoPoint {
   score: number;
   /** Aufrufe des Wikivoyage-Artikels (60 Tage) – Beliebtheit bei Reisenden */
   views?: number;
+  /** Anzahl Wikipedia-Sprachversionen (Bekanntheit, für Ziele ohne Wikivoyage-Artikel) */
+  sitelinks?: number;
+  /** Englischer Wikipedia-Artikel und dessen Aufrufe (60 Tage) – Bekanntheit ohne Wikivoyage-Artikel */
+  enTitle?: string;
+  wikiViews?: number;
+  /** Art des Orts für Abwechslung (z. B. "Fjord", "Gletscher", "Stadt") */
+  typeKey?: string;
   /** Bausteine der Bewertung, damit sie neu berechnet werden kann */
   rank?: number;
   depth?: number;

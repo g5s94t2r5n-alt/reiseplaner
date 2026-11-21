@@ -3,7 +3,7 @@ import { route as osrmRoute, table as osrmTable, trip as osrmTrip, type OsrmResu
 import { reverseGeocode } from '../api/geocode';
 import { findWikivoyageTitle, getPageviews, getSitelinks, getWikidataClasses, getWikipediaSummary, getWikivoyagePage, wikivoyageUrl } from '../api/wiki';
 import { climateBatch, type DailySeries } from '../api/weather';
-import { CLASS_INTERESTS, interestStrengths, listingProfile, seasonAdjust, strengthNotes, type ListingProfile } from './profile';
+import { CLASS_INTERESTS, interestStrengths, listingProfile, seasonAdjust, strengthNotes, typeKeyFor, type ListingProfile } from './profile';
 import { daylightHours, windowStats } from './season';
 import { countPois } from '../api/overpass';
 import { mapLimit } from '../api/http';
@@ -251,8 +251,9 @@ export async function refineCandidates(
     const profile = profiles.get(c);
     const cls = c.wikidata ? classes[c.wikidata] : undefined;
     c.strengths = interestStrengths({ profile, classes: cls, descTags, kind: c.kind });
+    c.typeKey = typeKeyFor(c.kind, cls, c.strengths);
     c.tags = (Object.keys(c.strengths) as Interest[]).filter((k) => (c.strengths![k] ?? 0) >= 1 || descTags.includes(k));
-    const notes = strengthNotes(interests, profile, cls);
+    const notes = [...(c.notes ?? []).filter((n) => n.startsWith('Zusätzlich aus Wikidata')), ...strengthNotes(interests, profile, cls)];
     if ((c.views ?? 0) >= 300) notes.push(`Beliebt bei Reisenden (ca. ${Math.round(c.views! / 2).toLocaleString('de-DE')} Aufrufe/Monat)`);
     const cl = climate?.[i];
     if (cl) {
