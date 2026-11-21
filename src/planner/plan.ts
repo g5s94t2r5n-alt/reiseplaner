@@ -1,11 +1,11 @@
 import type { Candidate, Place, Segment, Stop, StopInfo, Trip, TripSettings } from '../types';
 import { route as osrmRoute, table as osrmTable, trip as osrmTrip, type OsrmResult } from '../api/osrm';
 import { reverseGeocode } from '../api/geocode';
-import { findWikivoyageTitle, getSitelinks, getWikipediaSummary, getWikivoyagePage, wikivoyageUrl } from '../api/wiki';
+import { findWikivoyageTitle, getPageviews, getSitelinks, getWikipediaSummary, getWikivoyagePage, wikivoyageUrl } from '../api/wiki';
 import { countPois } from '../api/overpass';
 import { mapLimit } from '../api/http';
 import { coordKey, haversineKm, splitLineAtWaypoints, splitLineByLengths } from '../lib/geo';
-import { countListings, parseSleepListings, stripMarkup } from '../lib/wikitext';
+import { countListings, parseSightListings, parseSleepListings, stripMarkup } from '../lib/wikitext';
 import { loadCandidates, tagsFor } from './candidates';
 import { selectStops, transitNightsFor } from './select';
 import { fitNights, recommendNights } from './nights';
@@ -26,6 +26,7 @@ export function candidateToStop(c: Candidate): Stop {
     wikidata: c.wikidata,
     tags: c.tags,
     score: c.score,
+    views: c.views,
     lat: c.lat,
     lon: c.lon,
     nights: 1,
@@ -72,6 +73,13 @@ export async function enrichStops(stops: Stop[], onProgress?: ProgressFn): Promi
         info.doCount = counts.do;
         info.articleLength = page.wikitext.length;
         info.sleep = parseSleepListings(page.wikitext);
+        // Qualität statt nur Menge: bekannte Ziele (mit Wikidata-Eintrag) und UNESCO-Welterbe
+        info.notableCount = parseSightListings(page.wikitext).filter((x) => x.wikidata).length;
+        info.unesco = /world heritage/i.test(page.wikitext);
+        if (s.views == null) {
+          const pv = await getPageviews('en.wikivoyage.org', [page.title]).catch(() => ({}) as Record<string, number>);
+          s.views = pv[page.title];
+        }
         info.wikivoyageUrl = wikivoyageUrl(page.title);
         if (s.kind === 'custom' && s.tags.length === 0) {
           s.tags = tagsFor('custom', stripMarkup(page.wikitext.slice(0, 4000)));
@@ -106,6 +114,7 @@ export function applyNights(trip: Trip): Trip {
       kind: stop.kind,
       tags: stop.tags,
       info: stop.info,
+      views: stop.views,
       interests: settings.interests,
       pace: settings.pace,
       arrivalDriveH: arrival,
@@ -193,7 +202,14 @@ export async function planTrip(settings: TripSettings, onProgress: ProgressFn): 
   const load = await loadCandidates(settings.region, settings.interests, wanted);
   warnings.push(...load.warnings);
   settings.region.wikivoyageTitle = load.wikivoyageTitle;
-  const top = [...load.candidates].sort((a, b) => b.score - a.score).slice(0, 70);
+  // Orte direkt am Start/Ziel nicht automatisch als Stop wählen (z. B. die eigene Heimatstadt);
+  // auf der Karte bleiben sie als Vorschlag sichtbar.
+  const nearEnds = (c: { lat: number; lon: number }) =>
+    haversineKm(c, settings.start) < 15 || (!!settings.end && haversineKm(c, settings.end) < 15);
+  const top = [...load.candidates]
+    .filter((c) => !nearEnds(c))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 70);
 
   let order: number[] = [];
   if (top.length > 0) {

@@ -117,6 +117,134 @@ export function wikivoyageUrl(title: string): string {
   return `https://en.wikivoyage.org/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`;
 }
 
+/* ---------------- Beliebtheit: Aufrufzahlen (Ersatz für Bewertungen) ---------------- */
+
+export type WikiSite = 'en.wikivoyage.org' | 'en.wikipedia.org' | 'de.wikipedia.org';
+
+/**
+ * Summe der Seitenaufrufe der letzten `days` Tage (max. 60) je Titel – wie viele Menschen
+ * sich für einen Ort interessieren. Bis zu 50 Titel pro Anfrage, Weiterleitungen werden aufgelöst.
+ */
+export async function getPageviews(site: WikiSite, titles: string[], days = 60): Promise<Record<string, number>> {
+  const out: Record<string, number> = {};
+  const unique = [...new Set(titles.filter(Boolean))];
+  for (let i = 0; i < unique.length; i += 50) {
+    const chunk = unique.slice(i, i + 50);
+    const res = await cached(`pv:${site}:${days}:${chunk.join('|')}`, 7 * DAY, async () => {
+      const views: Record<string, number> = {};
+      const map: Record<string, string> = {};
+      let cont: Record<string, string> = {};
+      for (let guard = 0; guard < 10; guard++) {
+        const params = new URLSearchParams({
+          action: 'query',
+          prop: 'pageviews',
+          pvipdays: String(days),
+          titles: chunk.join('|'),
+          redirects: '1',
+          format: 'json',
+          formatversion: '2',
+          origin: '*',
+          ...cont,
+        });
+        const d = await wikiLimit(() =>
+          fetchJson<{
+            continue?: Record<string, string>;
+            query?: {
+              pages?: { title: string; pageviews?: Record<string, number | null> }[];
+              normalized?: { from: string; to: string }[];
+              redirects?: { from: string; to: string }[];
+            };
+          }>(`https://${site}/w/api.php?${params}`),
+        );
+        for (const n of d.query?.normalized ?? []) map[n.from] = n.to;
+        for (const r of d.query?.redirects ?? []) map[r.from] = r.to;
+        for (const p of d.query?.pages ?? []) {
+          if (p.pageviews) views[p.title] = Object.values(p.pageviews).reduce<number>((a, b) => a + (b ?? 0), 0);
+        }
+        if (!d.continue) break;
+        cont = d.continue;
+      }
+      const resolved: Record<string, number> = {};
+      for (const t of chunk) {
+        let cur = t;
+        for (let k = 0; k < 3 && map[cur]; k++) cur = map[cur];
+        if (views[cur] != null) resolved[t] = views[cur];
+      }
+      return resolved;
+    });
+    Object.assign(out, res);
+  }
+  return out;
+}
+
+/* ---------------- Wikipedia: Artikel in der Nähe (deutsch) ---------------- */
+
+export interface NearbyArticle {
+  title: string;
+  description?: string;
+  lat: number;
+  lon: number;
+  /** Artikellänge in Bytes – grobes Maß für Bedeutung */
+  length: number;
+  /** Aufrufe der letzten 30 Tage */
+  views?: number;
+  thumbnail?: string;
+  url: string;
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Wikipedia-Artikel mit Koordinaten im Umkreis (max. 10 km).
+ * Die Geo-Suche ist manchmal kurz überlastet ("too busy") → bis zu 3 Versuche.
+ */
+export async function getNearbyWikipedia(p: GeoPoint, radiusM = 10000): Promise<NearbyArticle[]> {
+  const lat = p.lat.toFixed(4);
+  const lon = p.lon.toFixed(4);
+  const url =
+    `https://de.wikipedia.org/w/api.php?action=query&generator=geosearch&ggscoord=${lat}%7C${lon}` +
+    `&ggsradius=${Math.min(10000, radiusM)}&ggslimit=50&prop=coordinates%7Cpageimages%7Cdescription%7Cinfo%7Cpageviews` +
+    `&piprop=thumbnail&pithumbsize=240&pvipdays=30&format=json&formatversion=2&origin=*`;
+  return cached(`wp-near2:${lat},${lon}:${radiusM}`, 14 * DAY, async () => {
+    let lastErr = '';
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await sleep(1500 * attempt);
+      const d = await wikiLimit(() =>
+        fetchJson<{
+          error?: { code: string };
+          query?: {
+            pages?: {
+              title: string;
+              description?: string;
+              length?: number;
+              coordinates?: { lat: number; lon: number }[];
+              thumbnail?: { source: string };
+              pageviews?: Record<string, number | null>;
+            }[];
+          };
+        }>(url),
+      );
+      if (d.error) {
+        lastErr = d.error.code;
+        continue;
+      }
+      return (d.query?.pages ?? [])
+        .filter((pg) => pg.coordinates?.[0])
+        .map((pg) => ({
+          title: pg.title,
+          description: pg.description,
+          lat: pg.coordinates![0].lat,
+          lon: pg.coordinates![0].lon,
+          length: pg.length ?? 0,
+          views: pg.pageviews ? Object.values(pg.pageviews).reduce<number>((s, v) => s + (v ?? 0), 0) : undefined,
+          thumbnail: pg.thumbnail?.source,
+          url: `https://de.wikipedia.org/wiki/${encodeURIComponent(pg.title.replace(/ /g, '_'))}`,
+        }));
+    }
+    throw new Error(`Wikipedia ist gerade ausgelastet (${lastErr}). Bitte später erneut versuchen.`);
+  });
+}
+
 /* ---------------- Wikipedia-Zusammenfassung (deutsch, mit Bild) ---------------- */
 
 export interface Summary {

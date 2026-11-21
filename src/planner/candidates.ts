@@ -1,5 +1,5 @@
 import type { Candidate, Interest, Region, StopKind } from '../types';
-import { getSitelinks, getWikivoyageCoordinates, getWikivoyagePage } from '../api/wiki';
+import { getPageviews, getSitelinks, getWikivoyageCoordinates, getWikivoyagePage } from '../api/wiki';
 import { lookupWikidata } from '../api/geocode';
 import { getSection, parseDestinationList, parseRegionTitles, type DestinationItem } from '../lib/wikitext';
 import { haversineKm } from '../lib/geo';
@@ -152,8 +152,36 @@ export async function loadCandidates(
       };
     });
 
+  // Beliebtheit bei Reisenden (Aufrufe der Wikivoyage-Artikel) als Qualitätsmerkmal
+  if (candidates.length) {
+    const views = await getPageviews(
+      'en.wikivoyage.org',
+      candidates.map((c) => c.wvTitle!),
+    ).catch(() => ({}) as Record<string, number>);
+    applyPopularity(candidates, views);
+  }
+
   if (candidates.length === 0) warnings.push('Keine Ziele mit Koordinaten gefunden – füge Stops manuell hinzu.');
   return { candidates, wikivoyageTitle: page.title, warnings };
+}
+
+/**
+ * Bonus von bis zu +3 Punkten je nach Beliebtheit – logarithmisch und relativ zum
+ * beliebtesten Ziel der Region (sonst hätten kleine Regionen nie bekannte Orte).
+ */
+export function popularityBonus(views: number | undefined, maxViews: number): number {
+  if (!views || maxViews <= 0) return 0;
+  return (3 * Math.log10(1 + views)) / Math.log10(1 + maxViews);
+}
+
+export function applyPopularity(candidates: Candidate[], views: Record<string, number>): void {
+  const max = Math.max(0, ...candidates.map((c) => views[c.wvTitle ?? c.name] ?? 0));
+  for (const c of candidates) {
+    const v = views[c.wvTitle ?? c.name];
+    if (v == null) continue;
+    c.views = v;
+    c.score = Math.round((c.score + popularityBonus(v, max)) * 10) / 10;
+  }
 }
 
 /** Grobe Prüfung, ob ein Punkt in der Region liegt (Bounding-Box mit etwas Puffer). */

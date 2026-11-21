@@ -21,6 +21,16 @@ export interface MapViewProps {
   bbox?: [number, number, number, number];
   /** false, solange die Karte ausgeblendet ist (Handy: Reiseplan-Ansicht) */
   visible?: boolean;
+  /** Zusätzliche Punkte, z. B. Sehenswürdigkeiten eines Stops */
+  pois?: MapPoi[];
+}
+
+export interface MapPoi extends GeoPoint {
+  id: string;
+  icon: string;
+  title: string;
+  subtitle?: string;
+  url?: string;
 }
 
 const iconCache = new Map<string, L.DivIcon>();
@@ -120,6 +130,7 @@ export function MapView(props: MapViewProps) {
     onSelect,
     onAddCandidate,
     visible = true,
+    pois = [],
   } = props;
 
   const stopIds = useMemo(() => new Set(stops.map((s) => s.wvTitle ?? s.name)), [stops]);
@@ -201,6 +212,22 @@ export function MapView(props: MapViewProps) {
           <Tooltip>
             {i + 1}. {s.name} · {s.nights} {s.nights === 1 ? 'Nacht' : 'Nächte'}
           </Tooltip>
+        </Marker>
+      ))}
+
+      {pois.map((p) => (
+        <Marker key={p.id} position={[p.lat, p.lon]} icon={divIcon(`poi-${p.icon}`, p.icon, 24, 'mk-acc mk-poi')}>
+          <Popup>
+            <div className="popup">
+              <strong>{p.title}</strong>
+              {p.subtitle && <div className="muted small">{p.subtitle}</div>}
+              {p.url && (
+                <a href={p.url} target="_blank" rel="noreferrer">
+                  Mehr ↗
+                </a>
+              )}
+            </div>
+          </Popup>
         </Marker>
       ))}
 

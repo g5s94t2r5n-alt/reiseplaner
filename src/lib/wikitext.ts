@@ -229,6 +229,53 @@ export function countListings(wikitext: string): ListingCounts {
   return { see: countIn(see), do: countIn(doSec) };
 }
 
+export interface ParsedSight {
+  kind: 'see' | 'do';
+  name: string;
+  description?: string;
+  url?: string;
+  hours?: string;
+  price?: string;
+  address?: string;
+  lat?: number;
+  lon?: number;
+  wikidata?: string;
+  wikipedia?: string;
+  image?: string;
+}
+
+/** Sehenswürdigkeiten ("See") und Aktivitäten ("Do") eines Wikivoyage-Artikels. */
+export function parseSightListings(wikitext: string): ParsedSight[] {
+  const out: ParsedSight[] = [];
+  for (const [section, kind] of [
+    ['See', 'see'],
+    ['Do', 'do'],
+  ] as const) {
+    const text = getSection(wikitext, [section]);
+    if (!text) continue;
+    for (const t of parseTemplates(text, ['see', 'do', 'listing', 'marker', 'vcard'])) {
+      const name = stripMarkup(t.params.name ?? '');
+      if (!name) continue;
+      const url = (t.params.url ?? '').trim();
+      out.push({
+        kind,
+        name,
+        description: stripMarkup(t.params.content ?? '') || undefined,
+        url: /^https?:\/\//.test(url) ? url : undefined,
+        hours: stripMarkup(t.params.hours ?? '') || undefined,
+        price: stripMarkup(t.params.price ?? '') || undefined,
+        address: stripMarkup(t.params.address ?? '') || undefined,
+        lat: num(t.params.lat),
+        lon: num(t.params.long ?? t.params.lon),
+        wikidata: t.params.wikidata || undefined,
+        wikipedia: t.params.wikipedia || undefined,
+        image: t.params.image || undefined,
+      });
+    }
+  }
+  return out;
+}
+
 export interface ParsedSleep {
   name: string;
   category?: 'budget' | 'mid' | 'splurge' | 'camping';

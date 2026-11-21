@@ -57,6 +57,8 @@ export interface Candidate extends GeoPoint {
   tags: Interest[];
   /** Attraktivität für dieses Reiseprofil (höher = besser) */
   score: number;
+  /** Aufrufe des Wikivoyage-Artikels (60 Tage) – Beliebtheit bei Reisenden */
+  views?: number;
 }
 
 export interface SleepListing extends Partial<GeoPoint> {
@@ -107,6 +109,10 @@ export interface StopInfo {
   poi?: PoiCounts;
   summary?: { text: string; image?: string; url?: string };
   wikivoyageUrl?: string;
+  /** Sehenswürdigkeiten mit Wikidata-Eintrag (= bekannte Ziele) */
+  notableCount?: number;
+  /** Artikel erwähnt UNESCO-Welterbe */
+  unesco?: boolean;
 }
 
 export interface Stop extends GeoPoint {
@@ -118,6 +124,8 @@ export interface Stop extends GeoPoint {
   wikidata?: string;
   tags: Interest[];
   score: number;
+  /** Aufrufe des Wikivoyage-Artikels (60 Tage) */
+  views?: number;
   nights: number;
   recommendedNights: number;
   /** vom Nutzer festgelegt – wird bei der automatischen Verteilung nicht verändert */

@@ -19,6 +19,11 @@ import { WildCampingCard } from './WildCampingCard';
 import { ShareCard } from './ShareCard';
 import { NumberField } from './NumberField';
 import { useIsMobile } from './useMediaQuery';
+import { DiscoverPanel, discoverPois, type DiscoverState } from './DiscoverPanel';
+import type { PublicHoliday } from '../api/holidays';
+import { CountryInfoCard } from './CountryInfoCard';
+import { useTravelInfo, type CountryStay } from './useTravelInfo';
+import { loadDiscover } from '../planner/discover';
 import { type WildInfo } from './AccommodationList';
 import { coordKey } from '../lib/geo';
 import { WILD_LABEL, countryName, wildHint, wildRuleFor, wildStatusFor } from '../data/wildCamping';
@@ -44,6 +49,27 @@ export function TripView({ tripId }: { tripId: string }) {
   const season = useSeason(trip, summary);
   const countryPoints = useMemo<GeoPoint[]>(() => (trip ? [...trip.stops, ...transits] : []), [trip, transits]);
   const countries = useCountries(countryPoints);
+  const [disc, setDisc] = useState<Record<string, DiscoverState>>({});
+  const [discOpen, setDiscOpen] = useState<string | null>(null);
+
+  // Aufenthalte je Land (für Feiertage, Schulferien, Länderinfos)
+  const stays = useMemo<CountryStay[]>(() => {
+    if (!trip || !summary) return [];
+    const byCc = new Map<string, CountryStay>();
+    for (const it of summary.items) {
+      if (it.type !== 'stop' && it.type !== 'transit') continue;
+      const p = it.type === 'stop' ? it.stop : it.transit;
+      const cc = countries[coordKey(p)]?.countryCode ?? trip.settings.region.countryCode?.toUpperCase();
+      if (!cc) continue;
+      const s = byCc.get(cc) ?? { countryCode: cc, places: [] };
+      s.places.push({ id: p.id, name: p.name, arrive: it.arrive, depart: it.depart });
+      byCc.set(cc, s);
+    }
+    return [...byCc.values()];
+  }, [trip, summary, countries]);
+  const travel = useTravelInfo(stays);
+  const holidaysAt = (id: string) =>
+    travel.info.flatMap((c) => c.holidaysByPlace).find((p) => p.id === id)?.holidays ?? [];
 
   if (!trip || !summary) {
     return (
@@ -145,6 +171,25 @@ export function TripView({ tripId }: { tripId: string }) {
     setAcc((a) => ({ ...a, [key]: { loading: false, items: res.items, error: res.error } }));
   };
 
+  /** Entdecken-Bereich eines Stops/Zwischenstopps öffnen und Daten laden */
+  const toggleDiscover = async (key: string, place: GeoPoint & { name: string; wvTitle?: string; wikidata?: string }) => {
+    if (discOpen === key) {
+      setDiscOpen(null);
+      return;
+    }
+    setDiscOpen(key);
+    setSelected(key);
+    setFocus({ lat: place.lat, lon: place.lon });
+    if (disc[key]?.data && !disc[key].data!.nearbyError) return;
+    setDisc((d) => ({ ...d, [key]: { loading: true, data: d[key]?.data } }));
+    try {
+      const data = await loadDiscover(place);
+      setDisc((d) => ({ ...d, [key]: { loading: false, data } }));
+    } catch (e) {
+      setDisc((d) => ({ ...d, [key]: { loading: false, error: (e as Error).message } }));
+    }
+  };
+
   const select = (id: string) => {
     setSelected(id);
     const p = trip.stops.find((s) => s.id === id) ?? transits.find((t) => t.id === id);
@@ -165,6 +210,7 @@ export function TripView({ tripId }: { tripId: string }) {
 
   const nightsDiff = summary.nightsUsed - settings.nights;
   const accItems = accOpen ? (acc[accOpen]?.items ?? []) : [];
+  const pois = discOpen ? discoverPois(disc[discOpen]?.data) : [];
   const endPlace = settings.end ?? settings.start;
   const stopNames = Object.fromEntries(trip.stops.map((s) => [s.id, s.name]));
   const segmentLabels = Object.fromEntries(
@@ -281,6 +327,8 @@ export function TripView({ tripId }: { tripId: string }) {
           segmentLabels={segmentLabels}
         />
 
+        <CountryInfoCard info={travel.info} loading={travel.loading} />
+
         <WildCampingCard
           style={settings.style}
           enabled={wildEnabled}
@@ -348,6 +396,10 @@ export function TripView({ tripId }: { tripId: string }) {
                       country={countryName(countryAt(item.transit)?.countryCode)}
                       onSelect={() => select(item.transit.id)}
                       onToggleAcc={() => toggleAcc(item.transit.id, item.transit, [])}
+                      discover={disc[item.transit.id]}
+                      discoverOpen={discOpen === item.transit.id}
+                      onToggleDiscover={() => toggleDiscover(item.transit.id, item.transit)}
+                      holidays={holidaysAt(item.transit.id)}
                     />
                   </li>
                 );
@@ -375,6 +427,10 @@ export function TripView({ tripId }: { tripId: string }) {
                       onMove={(dir) => move(item.index, dir)}
                       onRemove={() => updateStops(trip.stops.filter((s) => s.id !== item.stop.id), `${item.stop.name} wird entfernt …`)}
                       onToggleAcc={() => toggleAcc(item.stop.id, item.stop)}
+                      discover={disc[item.stop.id]}
+                      discoverOpen={discOpen === item.stop.id}
+                      onToggleDiscover={() => toggleDiscover(item.stop.id, item.stop)}
+                      holidays={holidaysAt(item.stop.id)}
                     />
                   </li>
                 );
@@ -412,6 +468,7 @@ export function TripView({ tripId }: { tripId: string }) {
           candidates={showCandidates ? trip.candidates : []}
           onAddCandidate={disabled ? undefined : addCandidate}
           accommodations={accItems}
+          pois={pois}
           selectedId={selected}
           onSelect={select}
           focus={focus}
@@ -466,6 +523,10 @@ function TransitCard(p: {
   country?: string;
   onSelect: () => void;
   onToggleAcc: () => void;
+  discover?: DiscoverState;
+  discoverOpen: boolean;
+  onToggleDiscover: () => void;
+  holidays: PublicHoliday[];
 }) {
   const w = p.wild;
   return (
@@ -484,7 +545,14 @@ function TransitCard(p: {
               {WILD_LABEL[w.status].icon} {wildHint(w.status, p.style)}
             </div>
           )}
+          {p.holidays.length > 0 && (
+            <div className="small holiday-line">
+              🎉 {p.holidays.map((h) => `${formatDate(h.date)}: ${h.localName}`).join(' · ')}
+            </div>
+          )}
         </div>
+      </div>
+      <div className="stop-actions">
         <button
           className={`btn btn-small ${p.accOpen ? 'btn-primary' : ''}`}
           onClick={(e) => {
@@ -494,7 +562,17 @@ function TransitCard(p: {
         >
           🛏 Unterkünfte
         </button>
+        <button
+          className={`btn btn-small ${p.discoverOpen ? 'btn-primary' : ''}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            p.onToggleDiscover();
+          }}
+        >
+          🔎 Entdecken
+        </button>
       </div>
+      {p.discoverOpen && p.discover && <DiscoverPanel state={p.discover} />}
       {p.accOpen && p.acc && (
         <AccommodationList
           state={p.acc}

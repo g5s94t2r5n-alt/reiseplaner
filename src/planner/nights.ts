@@ -5,7 +5,9 @@ import { INTEREST_LABELS, PACE_NIGHT_FACTOR } from './profiles';
 export interface NightsInput {
   kind: StopKind;
   tags: Interest[];
-  info?: Pick<StopInfo, 'seeCount' | 'doCount' | 'poi'> & { articleLength?: number };
+  info?: Pick<StopInfo, 'seeCount' | 'doCount' | 'poi' | 'notableCount' | 'unesco'> & { articleLength?: number };
+  /** Aufrufe des Wikivoyage-Artikels (60 Tage) – Beliebtheit bei Reisenden */
+  views?: number;
   interests: Interest[];
   pace: Pace;
   /** Fahrzeit des letzten Tagesabschnitts vor der Ankunft (h) */
@@ -40,8 +42,14 @@ export function recommendNights(input: NightsInput): NightsRecommendation {
   let activity: number;
   const info = input.info;
   if (info && info.seeCount + info.doCount > 0) {
-    activity = info.seeCount + info.doCount;
-    reasons.push(`${info.seeCount} Sehenswürdigkeiten und ${info.doCount} Aktivitäten laut Wikivoyage`);
+    // Qualität statt nur Menge: bekannte Ziele (mit Wikidata-Eintrag) zählen doppelt
+    const notable = Math.min(info.notableCount ?? 0, info.seeCount + info.doCount);
+    activity = info.seeCount + info.doCount + notable;
+    reasons.push(
+      `${info.seeCount} ${info.seeCount === 1 ? 'Sehenswürdigkeit' : 'Sehenswürdigkeiten'} und ` +
+        `${info.doCount} ${info.doCount === 1 ? 'Aktivität' : 'Aktivitäten'} laut Wikivoyage` +
+        (notable > 0 ? `, davon ${notable} bekannte` : ''),
+    );
   } else if (info?.poi && poiActivity(info.poi) > 0) {
     activity = poiActivity(info.poi);
     const p = info.poi;
@@ -75,6 +83,20 @@ export function recommendNights(input: NightsInput): NightsRecommendation {
     raw *= 0.85;
   }
   if (input.kind === 'nature' && matches.some((m) => m === 'nature' || m === 'hiking')) raw += 0.3;
+
+  // Beliebtheit bei Reisenden und Welterbe: etwas mehr Zeit
+  const perMonth = Math.round((input.views ?? 0) / 2);
+  if (perMonth >= 750) {
+    raw += 0.4;
+    reasons.push(`Sehr beliebtes Reiseziel (ca. ${perMonth.toLocaleString('de-DE')} Aufrufe/Monat auf Wikivoyage)`);
+  } else if (perMonth >= 150) {
+    raw += 0.2;
+    reasons.push(`Beliebtes Reiseziel (ca. ${perMonth.toLocaleString('de-DE')} Aufrufe/Monat auf Wikivoyage)`);
+  }
+  if (info?.unesco) {
+    raw += 0.2;
+    reasons.push('UNESCO-Welterbe vor Ort oder in der Nähe');
+  }
 
   raw *= PACE_NIGHT_FACTOR[input.pace];
   if (input.pace === 'relaxed') reasons.push('Entspanntes Tempo: etwas mehr Zeit eingeplant');

@@ -183,7 +183,7 @@ export function AccommodationList({ state, style, place, arrive, depart, wild, t
                 target="_blank"
                 rel="noreferrer"
               >
-                Google Maps ↗
+                ⭐ Bewertungen (Google) ↗
               </a>
               {a.osmUrl && (
                 <a href={a.osmUrl} target="_blank" rel="noreferrer">

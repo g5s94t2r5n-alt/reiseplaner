@@ -8,6 +8,8 @@ Du gibst Land oder Region, Start (und Ziel oder Rundreise), Zeitraum, Reiseart, 
 - **plant die Route** mit echten Fahrzeiten (OSRM) und fügt bei zu langen Etappen **Zwischenstopps** ein,
 - **empfiehlt die Aufenthaltsdauer** pro Stop mit Begründung und verteilt die Nächte auf dein Budget,
 - **zeigt Unterkünfte** passend zur Reiseart: Stellplätze und Campingplätze (mit Ausstattung wie Strom, Duschen, Entsorgung), Hostels, Pensionen oder Hotels. Unterkünfte, die im Reisezeitraum laut OpenStreetMap geschlossen haben, werden markiert,
+- **zeigt pro Stop „Entdecken“**: Sehenswürdigkeiten und Aktivitäten aus Wikivoyage (mit Öffnungszeiten, Preisen, Karte) und sehenswerte Orte in der Nähe aus der deutschen Wikipedia (mit Fotos), sortiert nach Bekanntheit, dazu der deutsche Wikivoyage-Reiseführer,
+- **„Unterwegs wissen“**: pro Land Fahrseite, Währung, Notruf, Maut/Vignette sowie Feiertage und Schulferien während deiner Reisetage,
 - **verlinkt Buchungsseiten** mit vorausgefüllter Suche (Ort, Reisedaten, Personenzahl): Airbnb für alle Reisearten, Booking.com für Backpacker und Auto sowie Google Maps. Hat eine Unterkunft keine Website in den offenen Daten, gibt es einen „Website suchen“-Link. Daten von diesen Seiten liest die App nicht (keine offenen Schnittstellen),
 - **berücksichtigt Wildcampen / Freistehen** (Camper und Zelt): Regeln pro Land entlang der Route, Hinweise an jedem Übernachtungsort sowie kostenlose Plätze (Schutzhütten, Naturlagerplätze, Wohnmobil-Parkplätze und – wo erlaubt oder geduldet – Rastplätze),
 - **prüft Saison und Wetter**: typisches Wetter pro Stop für deine Reisetage (bzw. Vorhersage kurz vor Abreise), Tageslicht, beste Reisezeit für die Route sowie Hinweise auf Frost, Schnee, Regen, Hitze, Polarnacht und Passstraßen im Winter.
@@ -55,6 +57,10 @@ npm run build      # Typecheck + Produktions-Build nach dist/
 | Unterkünfte mit Ausstattung | Overpass (OpenStreetMap) | oft überlastet → mehrere Spiegel-Server, gestaffelt |
 | Unterkünfte (schneller Fallback) | Photon mit Kategorie-Filter | nur Name/Typ/Lage |
 | Klima (letzte 3 Jahre), Vorhersage (16 Tage), Geländehöhe | Open-Meteo | kostenlos für private Nutzung |
+| Beliebtheit (Aufrufzahlen) | Wikimedia Pageviews (Wikivoyage, Wikipedia) | Ersatz für Bewertungen |
+| Orte in der Nähe, Fotos | Wikipedia (deutsch), Geosuche | |
+| Feiertage | Nager.Date | über 100 Länder |
+| Schulferien | OpenHolidays | v. a. Europa, nicht alle Länder/Jahre |
 
 API-Antworten werden in IndexedDB zwischengespeichert, damit die öffentlichen Dienste geschont werden.
 
@@ -87,6 +93,12 @@ src/
 
 - **Öffnungszeiten von Campingplätzen:** Reihenfolge der Quellen: OSM `opening_hours` (z. B. „May-Sep“), dann OSM `seasonal` (yes/no/summer/winter), dann Monatsangaben in der Beschreibung („Open May to September“). Ohne Angabe steht „Öffnungszeiten unbekannt“ am Platz. Geschlossene Plätze rutschen ans Ende.
 - **Wildcampen:** Die Regeln liegen in `src/data/wildCamping.ts`, getrennt für Zelt und Fahrzeug, mit drei Stufen: erlaubt, geduldet/eingeschränkt, verboten. Das ist eine vereinfachte Übersicht ohne Gewähr (Stand 2026). Das Land eines Ortes kommt aus der Photon-Rückwärtssuche, bei Großbritannien wird Schottland gesondert behandelt.
+
+- **Qualität statt nur Menge:** Echte Gästebewertungen (Google, Tripadvisor, Booking) gibt es nicht kostenlos. Ersatzweise misst die App, wie viele Menschen sich für einen Ort interessieren:
+  - Stop-Auswahl: + bis zu 3 Punkte nach Wikivoyage-Aufrufen, relativ zum beliebtesten Ziel der Region. Orte im Umkreis von 15 km um Start und Ziel werden nicht automatisch gewählt.
+  - Aufenthaltsdauer: Bekannte Sehenswürdigkeiten (mit Wikidata-Eintrag) zählen doppelt, sehr beliebte Ziele und UNESCO-Welterbe bekommen etwas mehr Zeit.
+  - Sehenswürdigkeiten: nach Wikipedia-Aufrufen sortiert. Die Aufrufe zählen nur, wenn der Wikipedia-Titel zum Namen passt (Schutz vor falschen Wikidata-Verweisen).
+  - Unterkünfte: offizielle Hotelsterne aus OSM. Bei jeder Unterkunft gibt es einen Link zu den Google-Bewertungen.
 
 ## Ideen für später
 

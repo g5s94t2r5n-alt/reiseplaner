@@ -180,6 +180,8 @@ export async function findAccommodations(center: GeoPoint, style: TravelStyle): 
       (phone ? 1 : 0) +
       (tags.opening_hours ? 0.5 : 0) +
       (tags.wikidata ? 1.5 : 0) +
+      // offizielle Hotelsterne als Qualitätsmerkmal (echte Gästebewertungen gibt es nicht frei)
+      Math.min(5, parseFloat(tags.stars ?? '') || 0) * 0.6 +
       features.length * 0.5 -
       (distanceKm / radiusKm) * 3;
     result.push({
