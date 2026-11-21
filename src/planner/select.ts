@@ -23,6 +23,11 @@ export interface SelectInput {
   minSpacingKm?: number;
   /** Bereits feststehende Stops (Indizes in candidates), in Reihenfolge */
   fixed?: number[];
+  /**
+   * Mindestbewertung relativ zum besten Kandidaten (0–1). Schwächere Orte werden nicht als
+   * Lückenfüller gewählt – übrige Nächte gehen dann an die gewählten Stops. Standard 0,55.
+   */
+  minRelScore?: number;
 }
 
 export interface SelectResult {
@@ -49,6 +54,9 @@ export function selectStops(input: SelectInput): SelectResult {
 
   const route: number[] = [0, ...(input.fixed ?? []).map(node), 1];
   const chosen = new Set<number>(input.fixed ?? []);
+  const fixedSet = new Set(input.fixed ?? []);
+  const bestScore = Math.max(0, ...candidates.filter((_, i) => !fixedSet.has(i)).map((c) => c.score));
+  const minScore = bestScore * (input.minRelScore ?? 0.55);
 
   const nightsOf = (r: number[]) => {
     let total = (r.length - 2) * avg;
@@ -65,6 +73,7 @@ export function selectStops(input: SelectInput): SelectResult {
     for (let ci = 0; ci < candidates.length; ci++) {
       if (chosen.has(ci)) continue;
       const c = candidates[ci];
+      if (c.score < minScore) continue;
       if ([...chosen].some((o) => haversineKm(candidates[o], c) < minSpacing)) continue;
       let bestPos = -1;
       let bestAdd = Infinity;

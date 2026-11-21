@@ -6,6 +6,8 @@ import { StopWeather } from './SeasonPanel';
 import type { StopSeason } from '../planner/seasonReport';
 import type { PublicHoliday } from '../api/holidays';
 import { DiscoverPanel, type DiscoverState } from './DiscoverPanel';
+import type { Alternative } from '../planner/alternatives';
+import { formatHours } from '../lib/geo';
 
 interface Props {
   stop: Stop;
@@ -32,6 +34,12 @@ interface Props {
   discoverOpen: boolean;
   onToggleDiscover: () => void;
   holidays: PublicHoliday[];
+  onTogglePin: () => void;
+  altOpen: boolean;
+  alternatives?: Alternative[];
+  onToggleAlternatives: () => void;
+  onSwap: (alt: Alternative) => void;
+  onExclude: () => void;
 }
 
 const KIND_LABEL = { city: 'Ort', nature: 'Naturziel', custom: 'Eigener Stop' };
@@ -60,7 +68,14 @@ export function StopCard(p: Props) {
           {p.index + 1}
         </span>
         <div className="stop-title">
-          <h3>{stop.name}</h3>
+          <h3>
+            {stop.pinned && (
+              <span className="pin-badge" title="Muss rein – bleibt beim Neu-Vorschlagen erhalten">
+                📌{' '}
+              </span>
+            )}
+            {stop.name}
+          </h3>
           <div className="muted small">
             {formatDate(p.arrive)} – {formatDate(p.depart)} · {KIND_LABEL[stop.kind]}
           </div>
@@ -88,6 +103,17 @@ export function StopCard(p: Props) {
       {text && <p className="stop-desc">{text.length > 320 ? `${text.slice(0, 320).replace(/\s\S*$/, '')} …` : text}</p>}
 
       <StopWeather season={p.season} />
+
+      {stop.selectionNotes && stop.selectionNotes.length > 0 && (
+        <details className="why" onClick={(e) => e.stopPropagation()}>
+          <summary>Warum dieser Stop?</summary>
+          <ul>
+            {stop.selectionNotes.map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+          </ul>
+        </details>
+      )}
 
       <details className="why" onClick={(e) => e.stopPropagation()}>
         <summary>
@@ -135,6 +161,18 @@ export function StopCard(p: Props) {
         <button className={`btn btn-small ${p.discoverOpen ? 'btn-primary' : ''}`} onClick={stopClick(p.onToggleDiscover)}>
           🔎 Entdecken
         </button>
+        <button className={`btn btn-small ${p.altOpen ? 'btn-primary' : ''}`} onClick={stopClick(p.onToggleAlternatives)} disabled={p.disabled}>
+          ⇄ Alternativen
+        </button>
+        <button
+          className={`btn btn-small ${stop.pinned ? 'btn-primary' : ''}`}
+          aria-pressed={!!stop.pinned}
+          title="Muss rein: bleibt beim „Neu vorschlagen“ erhalten"
+          onClick={stopClick(p.onTogglePin)}
+          disabled={p.disabled}
+        >
+          📌 {stop.pinned ? 'Muss rein' : 'Behalten'}
+        </button>
         {stop.info?.wikivoyageUrl && (
           <a className="btn btn-small btn-ghost" href={stop.info.wikivoyageUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
             Wikivoyage ↗
@@ -156,6 +194,45 @@ export function StopCard(p: Props) {
           ✕
         </button>
       </div>
+
+      {p.altOpen && (
+        <div className="alternatives" onClick={(e) => e.stopPropagation()}>
+          <h4>Statt {stop.name} …</h4>
+          {(p.alternatives ?? []).length === 0 && (
+            <div className="muted small">Keine passenden Alternativen in der Nähe der Route gefunden.</div>
+          )}
+          <ul className="sight-list">
+            {(p.alternatives ?? []).map((a) => (
+              <li key={a.candidate.id} className="sight">
+                <div className="sight-head">
+                  <strong>{a.candidate.name}</strong>
+                  <span className="pill">{a.candidate.kind === 'nature' ? 'Naturziel' : 'Ort'}</span>
+                  <span className={`small ${a.extraH > 0.25 ? 'fact-warn' : 'muted'}`}>
+                    {Math.abs(a.extraH) < 0.25
+                      ? 'gleiche Fahrzeit'
+                      : a.extraH > 0
+                        ? `ca. +${formatHours(a.extraH)} Fahrt`
+                        : `ca. −${formatHours(-a.extraH)} Fahrt`}
+                  </span>
+                </div>
+                {(a.candidate.notes?.length ? a.candidate.notes.slice(0, 2) : [a.candidate.description ?? '']).map(
+                  (n) => n && (
+                    <p key={n} className="small sight-desc">
+                      {n}
+                    </p>
+                  ),
+                )}
+                <button className="btn btn-small" onClick={() => p.onSwap(a)} disabled={p.disabled}>
+                  ⇄ Tauschen
+                </button>
+              </li>
+            ))}
+          </ul>
+          <button className="btn btn-small btn-ghost danger-text" onClick={p.onExclude} disabled={p.disabled}>
+            🚫 {stop.name} entfernen und nicht mehr vorschlagen
+          </button>
+        </div>
+      )}
 
       {p.discoverOpen && p.discover && <DiscoverPanel state={p.discover} />}
 

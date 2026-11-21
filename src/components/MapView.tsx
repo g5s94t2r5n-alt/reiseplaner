@@ -12,6 +12,7 @@ export interface MapViewProps {
   segments?: Segment[];
   candidates?: Candidate[];
   onAddCandidate?: (c: Candidate) => void;
+  onExcludeCandidate?: (c: Candidate) => void;
   accommodations?: Accommodation[];
   selectedId?: string | null;
   onSelect?: (id: string) => void;
@@ -129,6 +130,7 @@ export function MapView(props: MapViewProps) {
     selectedId,
     onSelect,
     onAddCandidate,
+    onExcludeCandidate,
     visible = true,
     pois = [],
   } = props;
@@ -169,11 +171,25 @@ export function MapView(props: MapViewProps) {
               <strong>{c.name}</strong>
               <div className="muted small">{c.kind === 'nature' ? 'Naturziel' : 'Ort'} · Wikivoyage-Empfehlung</div>
               {c.description && <p>{c.description.slice(0, 220)}</p>}
-              {onAddCandidate && (
-                <button className="btn btn-small" onClick={() => onAddCandidate(c)}>
-                  + Als Stop hinzufügen
-                </button>
+              {c.notes && c.notes.length > 0 && (
+                <ul className="popup-notes">
+                  {c.notes.slice(0, 3).map((n) => (
+                    <li key={n}>{n}</li>
+                  ))}
+                </ul>
               )}
+              <div className="popup-actions">
+                {onAddCandidate && (
+                  <button className="btn btn-small" onClick={() => onAddCandidate(c)}>
+                    + Als Stop hinzufügen
+                  </button>
+                )}
+                {onExcludeCandidate && (
+                  <button className="btn btn-small btn-ghost" onClick={() => onExcludeCandidate(c)}>
+                    🚫 Nicht vorschlagen
+                  </button>
+                )}
+              </div>
             </div>
           </Popup>
         </Marker>

@@ -117,6 +117,40 @@ export function wikivoyageUrl(title: string): string {
   return `https://en.wikivoyage.org/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`;
 }
 
+/* ---------------- Wikidata: Ortsart (Nationalpark, Fjord, Großstadt …) ---------------- */
+
+/**
+ * Für welche der Klassen `classIds` ist ein Ort eine Instanz (auch über Unterklassen)?
+ * Zusätzlich UNESCO-Welterbe über die Denkmal-Eigenschaft (P1435). Ergebnis: QID → Klassen-QIDs.
+ */
+export async function getWikidataClasses(qids: string[], classIds: string[]): Promise<Record<string, string[]>> {
+  const out: Record<string, string[]> = {};
+  const unique = [...new Set(qids.filter((q) => /^Q\d+$/.test(q)))];
+  for (let i = 0; i < unique.length; i += 80) {
+    const chunk = unique.slice(i, i + 80);
+    const query =
+      `SELECT ?item ?cls WHERE { VALUES ?item { ${chunk.map((q) => `wd:${q}`).join(' ')} } ` +
+      `{ VALUES ?cls { ${classIds.map((q) => `wd:${q}`).join(' ')} } ?item wdt:P31/wdt:P279* ?cls . } ` +
+      `UNION { ?item wdt:P1435 wd:Q9259 . BIND(wd:Q9259 AS ?cls) } }`;
+    const url = `https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(query)}`;
+    const data = await cached(`wd-cls:${chunk.join(',')}:${classIds.length}`, 30 * DAY, () =>
+      wikiLimit(() =>
+        fetchJson<{ results: { bindings: { item: { value: string }; cls: { value: string } }[] } }>(
+          url,
+          { headers: { Accept: 'application/sparql-results+json' } },
+          40000,
+        ),
+      ),
+    );
+    for (const b of data.results.bindings) {
+      const q = b.item.value.split('/').pop()!;
+      const c = b.cls.value.split('/').pop()!;
+      (out[q] ??= []).includes(c) || out[q].push(c);
+    }
+  }
+  return out;
+}
+
 /* ---------------- Beliebtheit: Aufrufzahlen (Ersatz für Bewertungen) ---------------- */
 
 export type WikiSite = 'en.wikivoyage.org' | 'en.wikipedia.org' | 'de.wikipedia.org';

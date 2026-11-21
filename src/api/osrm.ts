@@ -36,16 +36,32 @@ function toResult(route: OsrmRoute, order: number[], waypoints: OsrmWaypoint[]):
   };
 }
 
-/** Fahrzeit-Matrix in Stunden (null = nicht per Straße/Fähre erreichbar). Max. 100 Punkte. */
-export async function table(points: GeoPoint[]): Promise<(number | null)[][]> {
+/**
+ * Fahrzeit-Matrix in Stunden (null = nicht per Straße/Fähre erreichbar). Max. 100 Punkte.
+ * `snapped` = nächster Straßenpunkt je Eingabepunkt (dort hält man tatsächlich).
+ */
+export async function table(points: GeoPoint[]): Promise<{ hours: (number | null)[][]; snapped: GeoPoint[] }> {
   const url = `${OSRM}/table/v1/driving/${coordStr(points)}?annotations=duration`;
   const data = await cached(`osrm-table:${coordStr(points)}`, 7 * DAY, () =>
-    limit(() => fetchJson<{ code: string; durations?: (number | null)[][]; message?: string }>(url, {}, 45000)),
+    limit(() =>
+      fetchJson<{
+        code: string;
+        durations?: (number | null)[][];
+        destinations?: { location: [number, number] }[];
+        message?: string;
+      }>(url, {}, 45000),
+    ),
   );
   if (data.code !== 'Ok' || !data.durations) {
     throw new Error(`Fahrzeiten konnten nicht berechnet werden (${data.message ?? data.code}).`);
   }
-  return data.durations.map((row) => row.map((s) => (s == null ? null : s / 3600)));
+  return {
+    hours: data.durations.map((row) => row.map((s) => (s == null ? null : s / 3600))),
+    snapped: points.map((p, i) => {
+      const loc = data.destinations?.[i]?.location;
+      return loc ? { lat: loc[1], lon: loc[0] } : p;
+    }),
+  };
 }
 
 /** Route durch die Punkte in der gegebenen Reihenfolge. */

@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react';
 import type { Candidate, GeoPoint, Pace, Stop, TransitStop, Trip, TravelStyle } from '../types';
 import { useTrips } from '../store';
 import { allTransitStops, buildItinerary, formatDate, formatDateShort } from '../planner/itinerary';
-import { applyNights, candidateToStop, enrichStops, placeToStop, planTrip, recalcTrip } from '../planner/plan';
+import { applyNights, candidateToStop, enrichStops, placeKey, placeToStop, planTrip, recalcTrip } from '../planner/plan';
+import { alternativesFor, type Alternative } from '../planner/alternatives';
 import { insertAtBestPosition, loadAccommodations } from '../planner/accommodation';
 import { PACE_LABELS, STYLE_LABELS } from '../planner/profiles';
 import { formatHours, formatKm } from '../lib/geo';
@@ -51,6 +52,7 @@ export function TripView({ tripId }: { tripId: string }) {
   const countries = useCountries(countryPoints);
   const [disc, setDisc] = useState<Record<string, DiscoverState>>({});
   const [discOpen, setDiscOpen] = useState<string | null>(null);
+  const [altOpen, setAltOpen] = useState<string | null>(null);
 
   // Aufenthalte je Land (für Feiertage, Schulferien, Länderinfos)
   const stays = useMemo<CountryStay[]>(() => {
@@ -148,7 +150,44 @@ export function TripView({ tripId }: { tripId: string }) {
       return recalcTrip({ ...trip, stops: insertAtBestPosition(trip, enriched) }, { onProgress });
     });
 
-  const addCandidate = (c: Candidate) => addStop(candidateToStop(c));
+  const addCandidate = (c: Candidate) => addStop({ ...candidateToStop(c), selectionNotes: c.notes });
+
+  const togglePin = (id: string) =>
+    saveTrip({ ...trip, stops: trip.stops.map((s) => (s.id === id ? { ...s, pinned: !s.pinned } : s)) });
+
+  const excludeKey = (key: string) => [...new Set([...(trip.excluded ?? []), key])];
+
+  /** Stop entfernen und bei künftigen Vorschlägen auslassen */
+  const excludeStop = (id: string) => {
+    const stop = trip.stops.find((s) => s.id === id);
+    if (!stop) return;
+    setAltOpen(null);
+    run(`${stop.name} wird entfernt …`, (onProgress) =>
+      recalcTrip(
+        { ...trip, excluded: excludeKey(placeKey(stop)), stops: trip.stops.filter((s) => s.id !== id) },
+        { onProgress },
+      ),
+    );
+  };
+
+  /** Kandidat auf der Karte nicht mehr vorschlagen */
+  const excludeCandidate = (c: Candidate) => saveTrip({ ...trip, excluded: excludeKey(placeKey(c)) });
+
+  const unexclude = (key: string) => saveTrip({ ...trip, excluded: (trip.excluded ?? []).filter((k) => k !== key) });
+
+  /** Stop durch eine Alternative ersetzen (Nächte bleiben, sofern manuell gesetzt) */
+  const swapStop = (index: number, alt: Alternative) => {
+    const old = trip.stops[index];
+    setAltOpen(null);
+    run(`Tausche ${old.name} gegen ${alt.candidate.name} …`, async (onProgress) => {
+      const [fresh] = await enrichStops(
+        [{ ...candidateToStop(alt.candidate), selectionNotes: alt.candidate.notes, pinned: old.pinned }],
+        onProgress,
+      );
+      const stops = trip.stops.map((s, i) => (i === index ? fresh : s));
+      return recalcTrip({ ...trip, stops }, { onProgress });
+    });
+  };
 
   const toggleAcc = async (key: string, point: GeoPoint, sleep = trip.stops.find((s) => s.id === key)?.info?.sleep) => {
     if (accOpen === key) {
@@ -275,9 +314,17 @@ export function TripView({ tripId }: { tripId: string }) {
               className="btn btn-small btn-ghost"
               disabled={disabled}
               onClick={() => {
-                if (!confirm('Stops neu vorschlagen lassen? Deine Änderungen an den Stops gehen dabei verloren.')) return;
+                if (
+                  !confirm(
+                    'Stops neu vorschlagen lassen? Mit 📌 markierte Stops bleiben erhalten, ausgeschlossene Orte kommen nicht wieder.',
+                  )
+                )
+                  return;
                 run('Plane neu …', async (p) => {
-                  const fresh = await planTrip({ ...settings }, p);
+                  const fresh = await planTrip({ ...settings }, p, {
+                    pinned: trip.stops.filter((s) => s.pinned),
+                    excluded: trip.excluded,
+                  });
                   return { ...fresh, id: trip.id, name: trip.name, createdAt: trip.createdAt };
                 });
               }}
@@ -431,6 +478,12 @@ export function TripView({ tripId }: { tripId: string }) {
                       discoverOpen={discOpen === item.stop.id}
                       onToggleDiscover={() => toggleDiscover(item.stop.id, item.stop)}
                       holidays={holidaysAt(item.stop.id)}
+                      onTogglePin={() => togglePin(item.stop.id)}
+                      altOpen={altOpen === item.stop.id}
+                      alternatives={altOpen === item.stop.id ? alternativesFor(trip, item.index) : undefined}
+                      onToggleAlternatives={() => setAltOpen((a) => (a === item.stop.id ? null : item.stop.id))}
+                      onSwap={(alt) => swapStop(item.index, alt)}
+                      onExclude={() => excludeStop(item.stop.id)}
                     />
                   </li>
                 );
@@ -451,6 +504,16 @@ export function TripView({ tripId }: { tripId: string }) {
             <input type="checkbox" checked={showCandidates} onChange={(e) => setShowCandidates(e.target.checked)} />
             Weitere Wikivoyage-Empfehlungen auf der Karte zeigen ({trip.candidates.length})
           </label>
+          {(trip.excluded ?? []).length > 0 && (
+            <div className="small excluded-list">
+              <span className="muted">Nicht vorschlagen:</span>
+              {(trip.excluded ?? []).map((k) => (
+                <button key={k} className="pill-link" onClick={() => unexclude(k)} title="Wieder vorschlagen">
+                  {k} ✕
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <p className="muted small attribution">
@@ -465,8 +528,9 @@ export function TripView({ tripId }: { tripId: string }) {
           stops={trip.stops}
           transits={transits}
           segments={trip.segments}
-          candidates={showCandidates ? trip.candidates : []}
+          candidates={showCandidates ? trip.candidates.filter((c) => !(trip.excluded ?? []).includes(placeKey(c))) : []}
           onAddCandidate={disabled ? undefined : addCandidate}
+          onExcludeCandidate={disabled ? undefined : excludeCandidate}
           accommodations={accItems}
           pois={pois}
           selectedId={selected}

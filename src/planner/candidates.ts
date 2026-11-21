@@ -27,7 +27,7 @@ export function tagsFor(kind: StopKind, text: string): Interest[] {
  * depth 1 = stammt aus einer Unterregion.
  */
 export function scoreCandidate(
-  c: { kind: StopKind; tags: Interest[]; rank: number; depth: number },
+  c: { kind: StopKind; tags: Interest[]; rank: number; depth: number; strengths?: Partial<Record<Interest, number>> },
   interests: Interest[],
 ): number {
   let score = 3;
@@ -37,8 +37,18 @@ export function scoreCandidate(
   if (c.depth === 0) score += 4;
   // Erster Listeneintrag ist meist die Hauptstadt bzw. das wichtigste Ziel; der Rest ist alphabetisch
   if (c.rank === 0) score += 0.5;
-  const matches = c.tags.filter((t) => interests.includes(t)).length;
-  score += matches * 2;
+  let matches: number;
+  if (c.strengths) {
+    // genaue Stärke je Interesse (Wikivoyage-Einträge, Ortsart, Beschreibung), 0–3 Punkte
+    matches = interests.filter((i) => (c.strengths![i] ?? 0) >= 1).length;
+    score += interests.reduce((sum, i) => sum + (c.strengths![i] ?? 0), 0);
+    // passt zu keinem Interesse richtig gut → deutlicher Abzug (kein "Lückenfüller")
+    const best = Math.max(0, ...interests.map((i) => c.strengths![i] ?? 0));
+    if (interests.length > 0 && matches > 0 && best < 1.5) score -= 1.5;
+  } else {
+    matches = c.tags.filter((t) => interests.includes(t)).length;
+    score += matches * 2;
+  }
   if (interests.length > 0 && matches === 0) score -= 0.75;
   if (c.kind === 'city' && interests.length > 0 && !interests.includes('city') && !interests.includes('culture')) {
     score -= 0.5;
@@ -148,6 +158,8 @@ export async function loadCandidates(
         lat: r.lat!,
         lon: r.lon!,
         tags,
+        rank: r.rank,
+        depth: r.depth,
         score: scoreCandidate({ kind: r.kind, tags, rank: r.rank, depth: r.depth }, interests),
       };
     });
@@ -180,8 +192,19 @@ export function applyPopularity(candidates: Candidate[], views: Record<string, n
     const v = views[c.wvTitle ?? c.name];
     if (v == null) continue;
     c.views = v;
-    c.score = Math.round((c.score + popularityBonus(v, max)) * 10) / 10;
+    c.popBonus = popularityBonus(v, max);
+    c.score = Math.round((c.score + c.popBonus) * 10) / 10;
   }
+}
+
+/** Gesamtbewertung aus allen Bausteinen neu berechnen (nach Verfeinerung durch Interessen/Jahreszeit). */
+export function rescoreCandidate(c: Candidate, interests: Interest[]): number {
+  const base = scoreCandidate(
+    { kind: c.kind, tags: c.tags, rank: c.rank ?? 5, depth: c.depth ?? 1, strengths: c.strengths },
+    interests,
+  );
+  c.score = Math.round((base + (c.popBonus ?? 0) + (c.seasonDelta ?? 0)) * 10) / 10;
+  return c.score;
 }
 
 /** Grobe Prüfung, ob ein Punkt in der Region liegt (Bounding-Box mit etwas Puffer). */

@@ -60,6 +60,33 @@ export async function climateHistory(p: GeoPoint, today = new Date()): Promise<D
   );
 }
 
+/**
+ * Klima vieler Orte für einen Zeitraum in einer Anfrage (Open-Meteo unterstützt Koordinatenlisten).
+ * Liefert je Ort die Tageswerte und die Geländehöhe des Punkts.
+ */
+export async function climateBatch(
+  points: GeoPoint[],
+  from: string,
+  to: string,
+): Promise<{ series: DailySeries; elevation: number }[]> {
+  const out: { series: DailySeries; elevation: number }[] = [];
+  for (let i = 0; i < points.length; i += 50) {
+    const chunk = points.slice(i, i + 50);
+    const lats = chunk.map((p) => round(p.lat)).join(',');
+    const lons = chunk.map((p) => round(p.lon)).join(',');
+    const url =
+      `https://archive-api.open-meteo.com/v1/archive?latitude=${lats}&longitude=${lons}` +
+      `&start_date=${from}&end_date=${to}` +
+      `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum&timezone=GMT`;
+    const data = await cached(`om-batch:${from}:${to}:${lats}:${lons}`, 180 * DAY, () =>
+      limit(() => fetchJson<(OpenMeteoDaily & { elevation?: number })[] | (OpenMeteoDaily & { elevation?: number })>(url, {}, 40000)),
+    );
+    const list = Array.isArray(data) ? data : [data];
+    for (const d of list) out.push({ series: toSeries(d), elevation: d.elevation ?? 0 });
+  }
+  return out;
+}
+
 /** Vorhersage für die nächsten 16 Tage (3 Stunden gecacht). */
 export async function forecast(p: GeoPoint): Promise<DailySeries> {
   const lat = round(p.lat);

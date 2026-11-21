@@ -59,6 +59,15 @@ export interface Candidate extends GeoPoint {
   score: number;
   /** Aufrufe des Wikivoyage-Artikels (60 Tage) – Beliebtheit bei Reisenden */
   views?: number;
+  /** Bausteine der Bewertung, damit sie neu berechnet werden kann */
+  rank?: number;
+  depth?: number;
+  popBonus?: number;
+  seasonDelta?: number;
+  /** Wie gut passt der Ort zu jedem Interesse (0–3) */
+  strengths?: Partial<Record<Interest, number>>;
+  /** Begründungen für die Auswahl ("Warum dieser Stop?") */
+  notes?: string[];
 }
 
 export interface SleepListing extends Partial<GeoPoint> {
@@ -126,6 +135,10 @@ export interface Stop extends GeoPoint {
   score: number;
   /** Aufrufe des Wikivoyage-Artikels (60 Tage) */
   views?: number;
+  /** "Muss rein": bleibt beim Neu-Vorschlagen erhalten */
+  pinned?: boolean;
+  /** Warum dieser Ort ausgewählt wurde */
+  selectionNotes?: string[];
   nights: number;
   recommendedNights: number;
   /** vom Nutzer festgelegt – wird bei der automatischen Verteilung nicht verändert */
@@ -165,4 +178,6 @@ export interface Trip {
   /** Namen von Zwischenstopps, Schlüssel = gerundete Koordinate */
   transitNames: Record<string, string>;
   warnings: string[];
+  /** "Nicht vorschlagen": Wikivoyage-Titel bzw. Namen */
+  excluded?: string[];
 }

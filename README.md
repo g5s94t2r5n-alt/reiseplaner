@@ -59,6 +59,7 @@ npm run build      # Typecheck + Produktions-Build nach dist/
 | Klima (letzte 3 Jahre), Vorhersage (16 Tage), Geländehöhe | Open-Meteo | kostenlos für private Nutzung |
 | Beliebtheit (Aufrufzahlen) | Wikimedia Pageviews (Wikivoyage, Wikipedia) | Ersatz für Bewertungen |
 | Orte in der Nähe, Fotos | Wikipedia (deutsch), Geosuche | |
+| Ortsart (Nationalpark, Fjord …) | Wikidata (SPARQL) | |
 | Feiertage | Nager.Date | über 100 Länder |
 | Schulferien | OpenHolidays | v. a. Europa, nicht alle Länder/Jahre |
 
@@ -94,6 +95,11 @@ src/
 - **Öffnungszeiten von Campingplätzen:** Reihenfolge der Quellen: OSM `opening_hours` (z. B. „May-Sep“), dann OSM `seasonal` (yes/no/summer/winter), dann Monatsangaben in der Beschreibung („Open May to September“). Ohne Angabe steht „Öffnungszeiten unbekannt“ am Platz. Geschlossene Plätze rutschen ans Ende.
 - **Wildcampen:** Die Regeln liegen in `src/data/wildCamping.ts`, getrennt für Zelt und Fahrzeug, mit drei Stufen: erlaubt, geduldet/eingeschränkt, verboten. Das ist eine vereinfachte Übersicht ohne Gewähr (Stand 2026). Das Land eines Ortes kommt aus der Photon-Rückwärtssuche, bei Großbritannien wird Schottland gesondert behandelt.
 
+- **Stop-Auswahl im Detail:**
+  - *Interessen:* Anteil passender Wikivoyage-Einträge (z. B. 8 von 10 Einträgen sind Wanderungen) bei den 40 vielversprechendsten Kandidaten, dazu Ortsart aus Wikidata (Nationalpark, Gebirge, Fjord, Großstadt, UNESCO …) und Stichwörter der Kurzbeschreibung. Städte zählen bei Natur/Wandern höchstens mittel. Passt ein Ort zu keinem Interesse richtig, gibt es einen Abzug.
+  - *Jahreszeit:* Klima im Reisezeitraum (gleiche Tage im Vorjahr) am nächsten Straßenpunkt. Winterliche Naturziele werden abgewertet, hoch gelegene Orte mit Schnee stark (Passstraßen meist gesperrt), Strandziele bei Kühle ebenso. Auch Polarnacht und Dauerregen zählen.
+  - *Keine Lückenfüller:* Orte unter 55 % der Bewertung des besten Kandidaten werden nicht gewählt. Übrige Nächte gehen an die guten Stops.
+  - *Deine Kontrolle:* 📌 „Behalten“ (bleibt beim Neu-Vorschlagen), „Alternativen“ mit Tauschen (Umweg geschätzt), „Nicht mehr vorschlagen“ (auch im Karten-Popup). „Warum dieser Stop?“ zeigt die Begründung.
 - **Qualität statt nur Menge:** Echte Gästebewertungen (Google, Tripadvisor, Booking) gibt es nicht kostenlos. Ersatzweise misst die App, wie viele Menschen sich für einen Ort interessieren:
   - Stop-Auswahl: + bis zu 3 Punkte nach Wikivoyage-Aufrufen, relativ zum beliebtesten Ziel der Region. Orte im Umkreis von 15 km um Start und Ziel werden nicht automatisch gewählt.
   - Aufenthaltsdauer: Bekannte Sehenswürdigkeiten (mit Wikidata-Eintrag) zählen doppelt, sehr beliebte Ziele und UNESCO-Welterbe bekommen etwas mehr Zeit.

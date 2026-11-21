@@ -1558,3 +1558,52 @@ details.season:not([open]) > summary::after {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* ---------- Auswahl: Alternativen, Muss rein, Ausschlüsse ---------- */
+.alternatives {
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: default;
+}
+.alternatives h4 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+.alternatives .sight .btn {
+  margin-top: 4px;
+}
+.danger-text {
+  color: var(--bad);
+  align-self: flex-start;
+}
+.pin-badge {
+  font-size: 0.9em;
+}
+.excluded-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.excluded-list .pill-link {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.popup-notes {
+  margin: 4px 0;
+  padding-left: 16px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.popup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
