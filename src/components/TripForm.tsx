@@ -8,6 +8,8 @@ import { navigate } from '../nav';
 import { PlaceSearch } from './PlaceSearch';
 import { MapView } from './MapView';
 import { Progress } from './Progress';
+import { NumberField } from './NumberField';
+import { useIsMobile } from './useMediaQuery';
 
 function isoInDays(days: number): string {
   const d = new Date();
@@ -30,6 +32,7 @@ function displayBbox(region: Region | null): Region['bbox'] {
 
 export function TripForm() {
   const saveTrip = useTrips((s) => s.saveTrip);
+  const isMobile = useIsMobile();
   const [region, setRegion] = useState<Region | null>(null);
   const [start, setStart] = useState<Place | null>(null);
   const [roundtrip, setRoundtrip] = useState(true);
@@ -80,7 +83,7 @@ export function TripForm() {
     setInterests((cur) => (cur.includes(i) ? cur.filter((x) => x !== i) : [...cur, i]));
 
   return (
-    <main className="layout">
+    <main className={`layout ${isMobile ? 'm-plan' : ''}`}>
       <section className="panel">
         {progress ? (
           <Progress title="Dein Trip wird geplant" steps={progress} />
@@ -96,7 +99,7 @@ export function TripForm() {
               label="Wohin? (Land oder Region)"
               placeholder="z. B. Norwegen, Toskana, Schottland …"
               regionsOnly
-              autoFocus
+              autoFocus={!isMobile}
               value={region}
               onChange={(r) => setRegion(r ? toRegion(r) : null)}
             />
@@ -128,28 +131,16 @@ export function TripForm() {
                 <label htmlFor="startDate">Abreise</label>
                 <input id="startDate" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required />
               </div>
-              <div className="field field-narrow">
-                <label htmlFor="nights">Nächte</label>
-                <input
-                  id="nights"
-                  type="number"
-                  min={1}
-                  max={120}
-                  value={nights}
-                  onChange={(e) => setNights(Math.max(1, Math.min(120, Number(e.target.value) || 1)))}
-                />
-              </div>
-              <div className="field field-narrow">
-                <label htmlFor="travelers">Personen</label>
-                <input
-                  id="travelers"
-                  type="number"
-                  min={1}
-                  max={16}
-                  value={travelers}
-                  onChange={(e) => setTravelers(Math.max(1, Math.min(16, Number(e.target.value) || 1)))}
-                />
-              </div>
+              <NumberField id="nights" label="Nächte" className="field-narrow" value={nights} min={1} max={120} onChange={setNights} />
+              <NumberField
+                id="travelers"
+                label="Personen"
+                className="field-narrow"
+                value={travelers}
+                min={1}
+                max={16}
+                onChange={setTravelers}
+              />
             </div>
 
             <fieldset className="field">
@@ -243,14 +234,17 @@ export function TripForm() {
           </form>
         )}
       </section>
-      <section className="map-wrap">
-        <MapView
-          start={start}
-          end={roundtrip ? start : end}
-          bbox={displayBbox(region)}
-          fitKey={`${start?.lat}-${end?.lat}-${roundtrip}`}
-        />
-      </section>
+      {/* Am Handy keine Karte: sie würde das Formular verdecken und zeigt hier nur den Startpunkt */}
+      {!isMobile && (
+        <section className="map-wrap">
+          <MapView
+            start={start}
+            end={roundtrip ? start : end}
+            bbox={displayBbox(region)}
+            fitKey={`${start?.lat}-${end?.lat}-${roundtrip}`}
+          />
+        </section>
+      )}
     </main>
   );
 }

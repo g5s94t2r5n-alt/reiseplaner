@@ -19,6 +19,8 @@ export interface MapViewProps {
   fitKey?: string;
   focus?: GeoPoint | null;
   bbox?: [number, number, number, number];
+  /** false, solange die Karte ausgeblendet ist (Handy: Reiseplan-Ansicht) */
+  visible?: boolean;
 }
 
 const iconCache = new Map<string, L.DivIcon>();
@@ -50,9 +52,22 @@ const ACC_ICON: Record<string, string> = {
   motorhome_parking: '🅿️',
 };
 
-function FitBounds({ points, fitKey, bbox }: { points: [number, number][]; fitKey?: string; bbox?: MapViewProps['bbox'] }) {
+function FitBounds({
+  points,
+  fitKey,
+  bbox,
+  visible,
+}: {
+  points: [number, number][];
+  fitKey?: string;
+  bbox?: MapViewProps['bbox'];
+  visible: boolean;
+}) {
   const map = useMap();
   useEffect(() => {
+    // Eine ausgeblendete Karte hat die Größe 0 – erst beim Einblenden ausrichten
+    if (!visible) return;
+    map.invalidateSize();
     if (points.length > 1) {
       map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 11 });
     } else if (points.length === 1) {
@@ -66,15 +81,17 @@ function FitBounds({ points, fitKey, bbox }: { points: [number, number][]; fitKe
         { padding: [20, 20] },
       );
     }
-  }, [fitKey, bbox?.join(',')]);
+  }, [fitKey, bbox?.join(','), visible]);
   return null;
 }
 
-function FlyTo({ focus }: { focus?: GeoPoint | null }) {
+function FlyTo({ focus, visible }: { focus?: GeoPoint | null; visible: boolean }) {
   const map = useMap();
   useEffect(() => {
-    if (focus) map.flyTo([focus.lat, focus.lon], Math.max(map.getZoom(), 10), { duration: 0.6 });
-  }, [focus?.lat, focus?.lon, map]);
+    if (!visible || !focus) return;
+    map.invalidateSize();
+    map.flyTo([focus.lat, focus.lon], Math.max(map.getZoom(), 10), { duration: 0.6 });
+  }, [focus, visible, map]);
   return null;
 }
 
@@ -102,6 +119,7 @@ export function MapView(props: MapViewProps) {
     selectedId,
     onSelect,
     onAddCandidate,
+    visible = true,
   } = props;
 
   const stopIds = useMemo(() => new Set(stops.map((s) => s.wvTitle ?? s.name)), [stops]);
@@ -126,8 +144,8 @@ export function MapView(props: MapViewProps) {
         maxZoom={19}
       />
       <AutoResize />
-      <FitBounds points={fitPoints} fitKey={props.fitKey} bbox={props.bbox} />
-      <FlyTo focus={props.focus} />
+      <FitBounds points={fitPoints} fitKey={props.fitKey} bbox={props.bbox} visible={visible} />
+      <FlyTo focus={props.focus} visible={visible} />
 
       {segments.map((seg, i) => (
         <Polyline key={i} positions={seg.geometry} pathOptions={{ color: '#1f6f5c', weight: 4, opacity: 0.85, className: 'route-line' }} />

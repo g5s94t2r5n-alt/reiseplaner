@@ -168,6 +168,13 @@ describe('Kandidaten-Bewertung', () => {
     expect(nature).toBeGreaterThan(city);
   });
 
+  it('Städte im Hauptartikel schlagen Dörfer aus Unterregionen, auch bei reinem Natur-Interesse', () => {
+    // Toskana: Siena steht alphabetisch weit hinten in "Cities", Incisa kommt aus einer Unterregion
+    const siena = scoreCandidate({ kind: 'city', tags: ['culture', 'city'], rank: 8, depth: 0 }, ['nature']);
+    const village = scoreCandidate({ kind: 'nature', tags: ['nature'], rank: 0, depth: 1 }, ['nature']);
+    expect(siena).toBeGreaterThan(village);
+  });
+
   it('Highlights der Region schlagen Orte aus Unterregionen', () => {
     const top = scoreCandidate({ kind: 'nature', tags: ['nature'], rank: 5, depth: 0 }, ['nature']);
     const sub = scoreCandidate({ kind: 'nature', tags: ['nature'], rank: 0, depth: 1 }, ['nature']);

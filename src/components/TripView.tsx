@@ -17,6 +17,8 @@ import { useSeason } from './useSeason';
 import { useCountries } from './useCountries';
 import { WildCampingCard } from './WildCampingCard';
 import { ShareCard } from './ShareCard';
+import { NumberField } from './NumberField';
+import { useIsMobile } from './useMediaQuery';
 import { type WildInfo } from './AccommodationList';
 import { coordKey } from '../lib/geo';
 import { WILD_LABEL, countryName, wildHint, wildRuleFor, wildStatusFor } from '../data/wildCamping';
@@ -33,6 +35,9 @@ export function TripView({ tripId }: { tripId: string }) {
   const [showCandidates, setShowCandidates] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [showShare, setShowShare] = useState(false);
+  // Handy: entweder Reiseplan oder Karte (beides gleichzeitig ist zu eng)
+  const isMobile = useIsMobile();
+  const [mobileMap, setMobileMap] = useState(false);
 
   const summary = useMemo(() => (trip ? buildItinerary(trip) : null), [trip]);
   const transits = useMemo(() => (trip ? allTransitStops(trip) : []), [trip]);
@@ -147,6 +152,17 @@ export function TripView({ tripId }: { tripId: string }) {
     document.getElementById(`item-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   };
 
+  /** Handy: von der Karte zurück zum Reiseplan und zum gewählten Eintrag springen */
+  const showInPlan = (id: string | null) => {
+    setMobileMap(false);
+    if (id) requestAnimationFrame(() => document.getElementById(`item-${id}`)?.scrollIntoView({ block: 'start' }));
+  };
+
+  const mapVisible = !isMobile || mobileMap;
+  const selectedItem = summary.items.find(
+    (it) => (it.type === 'stop' && it.stop.id === selected) || (it.type === 'transit' && it.transit.id === selected),
+  );
+
   const nightsDiff = summary.nightsUsed - settings.nights;
   const accItems = accOpen ? (acc[accOpen]?.items ?? []) : [];
   const endPlace = settings.end ?? settings.start;
@@ -160,7 +176,7 @@ export function TripView({ tripId }: { tripId: string }) {
   const passShown = new Set<number>();
 
   return (
-    <main className="layout">
+    <main className={`layout ${isMobile ? (mobileMap ? 'm-map' : 'm-plan') : ''}`}>
       <section className="panel">
         <div className="trip-head">
           <input
@@ -400,8 +416,39 @@ export function TripView({ tripId }: { tripId: string }) {
           onSelect={select}
           focus={focus}
           fitKey={`${trip.id}-${trip.stops.length}`}
+          visible={mapVisible}
         />
+        {isMobile && mobileMap && busy && <div className="map-status">{busy[busy.length - 1]}</div>}
+        {isMobile && mobileMap && selectedItem && (selectedItem.type === 'stop' || selectedItem.type === 'transit') && (
+          <div className="map-sheet">
+            <div className="map-sheet-text">
+              <strong>
+                {selectedItem.type === 'stop'
+                  ? `${selectedItem.index + 1}. ${selectedItem.stop.name}`
+                  : `Zwischenstopp bei ${selectedItem.transit.name}`}
+              </strong>
+              <span className="muted small">
+                {formatDate(selectedItem.arrive)} – {formatDate(selectedItem.depart)} ·{' '}
+                {selectedItem.type === 'stop'
+                  ? `${selectedItem.stop.nights} ${selectedItem.stop.nights === 1 ? 'Nacht' : 'Nächte'}`
+                  : '1 Nacht'}
+              </span>
+            </div>
+            <button className="btn btn-small btn-primary" onClick={() => showInPlan(selected)}>
+              Im Reiseplan
+            </button>
+          </div>
+        )}
       </section>
+      {isMobile && (
+        <button
+          className="map-toggle"
+          onClick={() => (mobileMap ? showInPlan(null) : setMobileMap(true))}
+          aria-label={mobileMap ? 'Reiseplan anzeigen' : 'Karte anzeigen'}
+        >
+          {mobileMap ? '📋 Reiseplan' : '🗺️ Karte'}
+        </button>
+      )}
     </main>
   );
 }
@@ -487,28 +534,16 @@ function SettingsEditor({
           <label htmlFor="s-date">Abreise</label>
           <input id="s-date" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
         </div>
-        <div className="field field-narrow">
-          <label htmlFor="s-nights">Nächte</label>
-          <input
-            id="s-nights"
-            type="number"
-            min={1}
-            max={120}
-            value={nights}
-            onChange={(e) => setNights(Math.max(1, Math.min(120, Number(e.target.value) || 1)))}
-          />
-        </div>
-        <div className="field field-narrow">
-          <label htmlFor="s-travelers">Personen</label>
-          <input
-            id="s-travelers"
-            type="number"
-            min={1}
-            max={16}
-            value={travelers}
-            onChange={(e) => setTravelers(Math.max(1, Math.min(16, Number(e.target.value) || 1)))}
-          />
-        </div>
+        <NumberField id="s-nights" label="Nächte" className="field-narrow" value={nights} min={1} max={120} onChange={setNights} />
+        <NumberField
+          id="s-travelers"
+          label="Personen"
+          className="field-narrow"
+          value={travelers}
+          min={1}
+          max={16}
+          onChange={setTravelers}
+        />
       </div>
       <div className="row">
         <div className="field">

@@ -55,7 +55,10 @@ export function SeasonPanel({ report, loading, error, interests, stopNames, segm
     }),
   );
   const grouped = [...groups.values()].sort((a, b) => levelRank(b.w.level) - levelRank(a.w.level));
-  const issues = grouped.filter((g) => g.w.level === 'warn' || g.w.level === 'bad').length;
+  // auch Hinweise zur Reisezeit selbst ("eher ungünstig") zählen mit
+  const issues =
+    grouped.filter((g) => g.w.level === 'warn' || g.w.level === 'bad').length +
+    report.tripWarnings.filter((w) => w.level === 'warn' || w.level === 'bad').length;
   const scores = report.normals?.map((n) => monthScore(n, interests)) ?? [];
   const max = Math.max(...scores);
 

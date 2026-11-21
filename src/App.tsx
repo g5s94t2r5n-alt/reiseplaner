@@ -21,6 +21,20 @@ export default function App() {
   const [view, setView] = useState<View>(parseHash);
   const hydrated = useHydrated();
 
+  // Merken, ob gerade ein Eingabefeld aktiv ist (Handy: Tastatur offen → schwebende Buttons ausblenden)
+  useEffect(() => {
+    const isField = (el: EventTarget | null) =>
+      el instanceof HTMLElement && /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName) && (el as HTMLInputElement).type !== 'checkbox';
+    const onIn = (e: FocusEvent) => isField(e.target) && document.documentElement.classList.add('typing');
+    const onOut = () => document.documentElement.classList.remove('typing');
+    document.addEventListener('focusin', onIn);
+    document.addEventListener('focusout', onOut);
+    return () => {
+      document.removeEventListener('focusin', onIn);
+      document.removeEventListener('focusout', onOut);
+    };
+  }, []);
+
   useEffect(() => {
     const onHash = () => setView(parseHash());
     window.addEventListener('hashchange', onHash);
@@ -31,7 +45,7 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <a className="brand" href="#/">
-          <span aria-hidden>🚐</span> Reiseplaner
+          <span aria-hidden>🚐</span> <span className="brand-text">Reiseplaner</span>
         </a>
         <nav>
           <a href="#/" className={view.name === 'list' ? 'active' : ''}>

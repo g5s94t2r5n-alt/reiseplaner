@@ -100,14 +100,18 @@ h3 {
   display: flex;
   flex-direction: column;
   height: 100%;
+  /* dvh: berücksichtigt ein- und ausfahrende Browserleisten am Handy */
+  height: 100dvh;
 }
 .topbar {
-  height: var(--topbar-h);
+  /* safe-area: Notch/Statusleiste, wenn die App vom Home-Bildschirm gestartet wird */
+  height: calc(var(--topbar-h) + env(safe-area-inset-top));
   flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
+  gap: 8px;
+  padding: env(safe-area-inset-top) max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   z-index: 10;
@@ -165,24 +169,106 @@ h3 {
   margin: 0 auto;
 }
 
+/*
+ * Handy: Reiseplan und Karte abwechselnd (Umschalter unten).
+ * Der Reiseplan scrollt ganz normal; die Karte liegt bei Bedarf als Vollbild darüber,
+ * damit Scroll-Position und Eingaben im Plan erhalten bleiben.
+ */
 @media (max-width: 820px) {
   .layout {
-    display: flex;
-    flex-direction: column-reverse;
+    display: block;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
   .panel {
     overflow: visible;
     border-right: 0;
-    padding: 14px 16px 40px;
+    padding: 14px max(16px, env(safe-area-inset-right)) calc(96px + env(safe-area-inset-bottom))
+      max(16px, env(safe-area-inset-left));
   }
-  .map-wrap {
-    height: 42vh;
-    flex: none;
-    position: sticky;
-    top: 0;
-    z-index: 1;
+  .layout.m-plan .map-wrap {
+    display: none;
   }
+  .layout.m-map .map-wrap {
+    position: fixed;
+    top: calc(var(--topbar-h) + env(safe-area-inset-top));
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+  }
+  /* iOS zoomt bei Eingabefeldern unter 16px automatisch hinein */
+  input[type='search'],
+  input[type='text'],
+  input[type='date'],
+  input[type='number'],
+  select {
+    font-size: 16px;
+  }
+  .results {
+    max-height: 45vh;
+  }
+}
+
+.map-toggle {
+  position: fixed;
+  left: 50%;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 1500;
+  border: 0;
+  border-radius: 999px;
+  padding: 12px 20px;
+  background: #1d2420;
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+}
+@media (prefers-color-scheme: dark) {
+  .map-toggle {
+    background: #e8ece9;
+    color: #131715;
+  }
+}
+.map-sheet {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: calc(80px + env(safe-area-inset-bottom));
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.map-sheet-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.map-sheet-text strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.map-status {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: 0.85rem;
+  white-space: nowrap;
 }
 
 /* ---------- Komponenten ---------- */
@@ -357,6 +443,7 @@ fieldset.field > legend + * {
   margin-top: 0;
 }
 input[type='search'],
+input[type='text'],
 input[type='date'],
 input[type='number'],
 select,
@@ -1261,7 +1348,8 @@ details.season:not([open]) > summary::after {
 .update-banner {
   position: fixed;
   left: 50%;
-  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  /* über dem Karten-Umschalter am Handy */
+  bottom: calc(80px + env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%);
   z-index: 2000;
   display: flex;
@@ -1274,4 +1362,80 @@ details.season:not([open]) > summary::after {
   box-shadow: var(--shadow);
   font-size: 0.9rem;
   max-width: calc(100vw - 32px);
+}
+
+/* ---------- Handy: große Tippflächen, schmale Displays ---------- */
+@media (max-width: 820px) {
+  .btn-small {
+    min-height: 40px;
+    padding: 8px 14px;
+  }
+  .icon-btn {
+    width: 40px;
+    height: 40px;
+  }
+  .pill-link {
+    padding: 9px 12px;
+  }
+  .acc-actions {
+    gap: 4px 16px;
+  }
+  .acc-actions a {
+    display: inline-block;
+    padding: 8px 0;
+  }
+  .season-head {
+    min-height: 40px;
+  }
+  .why summary {
+    padding: 8px 0;
+  }
+  .check {
+    min-height: 40px;
+  }
+  .topbar nav a:not(.btn) {
+    padding: 10px 4px;
+    white-space: nowrap;
+  }
+  .topbar .btn {
+    white-space: nowrap;
+  }
+  /* Bei offener Tastatur verdeckt der schwebende Umschalter sonst Eingabefelder
+     (Klasse "typing" setzt App.tsx bei focusin/focusout – funktioniert auch ohne :has()) */
+  .typing .map-toggle {
+    display: none;
+  }
+}
+
+@media (max-width: 400px) {
+  .brand-text {
+    display: none;
+  }
+  /* Datum in eigene Zeile, sonst wird es abgeschnitten */
+  .row {
+    flex-wrap: wrap;
+  }
+  .row > .field:not(.field-narrow) {
+    flex-basis: 100%;
+  }
+  .row > .field-narrow {
+    flex: 1 1 0;
+  }
+}
+@media (max-width: 820px) {
+  .brand {
+    padding: 8px 8px 8px 0;
+  }
+}
+@media (max-width: 400px) {
+  /* Nächte-Regler unter den Namen, damit Name und Datum Platz haben */
+  .stop-head {
+    flex-wrap: wrap;
+  }
+  .stop-head .stop-title {
+    flex: 1 1 calc(100% - 44px);
+  }
+  .stop-head .stepper {
+    margin-left: 40px;
+  }
 }

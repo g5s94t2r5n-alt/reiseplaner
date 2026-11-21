@@ -31,12 +31,17 @@ export function scoreCandidate(
   interests: Interest[],
 ): number {
   let score = 3;
-  if (c.depth === 0) score += 3 + Math.max(0, 1 - c.rank * 0.1);
+  // Highlights der Region klar vor Orten aus Unterregionen – sonst gewinnen bei
+  // reinen Natur-Interessen kleine Dörfer gegen Siena oder Pisa (Wikivoyage listet
+  // Naturziele oft nur in den Unterregionen).
+  if (c.depth === 0) score += 4;
+  // Erster Listeneintrag ist meist die Hauptstadt bzw. das wichtigste Ziel; der Rest ist alphabetisch
+  if (c.rank === 0) score += 0.5;
   const matches = c.tags.filter((t) => interests.includes(t)).length;
   score += matches * 2;
-  if (interests.length > 0 && matches === 0) score -= 1.5;
+  if (interests.length > 0 && matches === 0) score -= 0.75;
   if (c.kind === 'city' && interests.length > 0 && !interests.includes('city') && !interests.includes('culture')) {
-    score -= 1;
+    score -= 0.5;
   }
   return Math.round(score * 10) / 10;
 }
